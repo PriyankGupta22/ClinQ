@@ -2,7 +2,7 @@ import User from "../models/User.models.js"
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 
-const registerUser = async (req, res) => {
+export const registerUser = async (req, res) => {
     try{
         const {name, email, password} = req.body
         if(!name || !email || !password){
@@ -24,7 +24,8 @@ const registerUser = async (req, res) => {
         await User.create({
             name, 
             email,
-            password : hashedPassword
+            password : hashedPassword,
+            role: "patient"
         })
 
         return res.status(201).json({
@@ -40,8 +41,7 @@ const registerUser = async (req, res) => {
     }
 }
 
-
-const loginUser = async (req, res) => {
+export const loginUser = async (req, res) => {
     try{
         const {email, password} = req.body
 
@@ -83,7 +83,7 @@ const loginUser = async (req, res) => {
             {
                 id: doesExist._id
             },
-            process.env.REFRESH_JWT_TOKEN,
+            process.env.REFRESH_JWT_SECRET,
             {
                 expiresIn: "7d"
             }
@@ -97,15 +97,14 @@ const loginUser = async (req, res) => {
 
     }
     catch(error){
-        console.log("error in login in loginUser function in auth.controllers.js")
+        console.log("error in login in loginUser function in auth.controllers.js", error)
         return res.status(500).json({
             message: "error in login in loginUser function in auth.controllers.js"
         })
     }
 }
 
-
-const refreshAccessToken = (req, res) => {
+export const refreshAccessToken = (req, res) => {
 
     try{
         const {refreshToken} = req.body
@@ -118,7 +117,7 @@ const refreshAccessToken = (req, res) => {
 
     const decoded = jwt.verify(
         refreshToken,
-        process.env.REFRESH_JWT_TOKEN
+        process.env.REFRESH_JWT_SECRET
     )
 
     const accessToken = jwt.sign(
