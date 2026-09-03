@@ -142,3 +142,22 @@ export const refreshAccessToken = (req, res) => {
         })
     }
 }
+
+
+export const getMe = (req, res) => {
+    try{
+        const { id, name, email} = req.user
+        return res.status(200).json({
+            id: id,
+            name: name,
+            email: email,
+            message: "details above"
+        })
+    }
+    catch(error){
+        console.log("some error in getMe function in authMiddleware", error)
+        return res.status(401).json({
+            message: "some error in getMe function in authMiddleware"
+        })
+    }
+}
