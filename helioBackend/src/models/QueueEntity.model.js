@@ -57,7 +57,7 @@ const queueEntrySchema = new mongoose.Schema(
       type: Date,
     },
 
-    estimatedWaitingTime: {
+    estimatedEndTime: {
       type: Number,
     },
 

@@ -4,7 +4,7 @@ import Doctor from "../models/Doctor.model.js";
 import DoctorClinic from "../models/DoctorClinic.model.js";
 import QueueEntry from "../models/QueueEntity.model.js";
 import Queue from "../models/Queue.model.js";
-import { recalculateQueue } from "../utils/queue.utils.js";
+import updateQueue from "../utils/queue.utils.js";
 
 const getDayStart = (value) => {
     const dateText = String(value);
@@ -167,7 +167,7 @@ console.log("startTime:", doctor.schedule.startTime);
             await queue.save();
         }
 
-        await recalculateQueue(clinicId, doctorId, date);
+        await updateQueue(doctorId, clinicId, date);
         queue = await broadcastQueue(req, clinicId, doctorId, date, "Patient added to queue");
 
         return res.status(200).json({
@@ -197,15 +197,19 @@ export const getQueue = async (req, res) => {
             });
         }
 
-        const date = getDayStart(requestedDate);
-        if (!date) {
-            return res.status(400).json({ message: "Valid queue date is required" });
+        if (req.user.role === "doctor") {
+            const doctorClinic = await DoctorClinic.findOne({ doctorId: req.user.id, clinicId });
+            if (String(req.user.id) !== String(doctorId) || !doctorClinic) {
+                return res.status(403).json({ message: "You are not assigned to this clinic queue" });
+            }
         }
-        const queue = await loadQueue(clinicId, doctorId, date);
+
+        const queue = await loadQueue(clinicId, doctorId, requestedDate);
 
         if (!queue) {
-            return res.status(404).json({
-                message: "Queue not found"
+            return res.status(200).json({
+                message: "Queue fetched successfully",
+                queue: { entries: [] }
             });
         }
 
@@ -235,6 +239,9 @@ export const startConsultation = async (req, res) => {
                 message: "Queue entry not found"
             });
         }
+        if (req.user.role !== "doctor" || String(queueEntry.doctorId) !== String(req.user.id)) {
+            return res.status(403).json({ message: "Only the assigned doctor can start this consultation" });
+        }
 
         if (queueEntry.status !== "waiting") {
             return res.status(400).json({
@@ -249,11 +256,7 @@ export const startConsultation = async (req, res) => {
         await queueEntry.save();
 
         // Recalculate complete queue
-        await recalculateQueue(
-            queueEntry.clinicId,
-            queueEntry.doctorId,
-            queueEntry.date
-        );
+        await updateQueue(queueEntry.doctorId, queueEntry.clinicId, queueEntry.date);
         const updatedQueue = await broadcastQueue(req, queueEntry.clinicId, queueEntry.doctorId, queueEntry.date, "Consultation started");
 
         return res.status(200).json({
@@ -282,6 +285,9 @@ export const completeConsultation = async (req, res) => {
                 message: "Queue entry not found"
             });
         }
+        if (req.user.role !== "doctor" || String(queueEntry.doctorId) !== String(req.user.id)) {
+            return res.status(403).json({ message: "Only the assigned doctor can complete this consultation" });
+        }
 
         if (queueEntry.status !== "consulting") {
             return res.status(400).json({
@@ -294,11 +300,7 @@ export const completeConsultation = async (req, res) => {
 
         await queueEntry.save();
 
-        await recalculateQueue(
-            queueEntry.clinicId,
-            queueEntry.doctorId,
-            queueEntry.date
-        );
+        await updateQueue(queueEntry.doctorId, queueEntry.clinicId, queueEntry.date);
 
         const updatedQueue = await broadcastQueue(req, queueEntry.clinicId, queueEntry.doctorId, queueEntry.date, "Consultation completed");
 

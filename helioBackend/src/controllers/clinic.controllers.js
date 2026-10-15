@@ -2,6 +2,100 @@ import Doctor from "../models/Doctor.model.js"
 import DoctorClinic from "../models/DoctorClinic.model.js"
 import Clinic from "../models/Clinic.model.js"
 import Appointment from "../models/Appointment.model.js"
+import Queue from "../models/Queue.model.js"
+
+export const searchClinics = async (req, res) => {
+    try {
+        const { search, specialty, distance, rating } = req.query;
+
+        // Build clinic query
+        const clinicQuery = { isActive: true };
+        if (search) {
+            const searchRegex = new RegExp(search, "i");
+            clinicQuery.$or = [
+                { clinicName: searchRegex },
+                { "address.city": searchRegex },
+                { description: searchRegex }
+            ];
+        }
+
+        const clinics = await Clinic.find(clinicQuery).lean();
+
+        // Process each clinic to get doctors and specialists
+        const results = await Promise.all(clinics.map(async (clinic) => {
+            const doctorLinks = await DoctorClinic.find({ clinicId: clinic._id })
+                .populate({ path: "doctorId", match: { isActive: true } });
+            
+            const doctors = doctorLinks
+                .map(link => link.doctorId)
+                .filter(doc => doc !== null);
+
+            // Extract unique specialties from doctors
+            const specialists = [...new Set(doctors.map(doc => doc.specialization).filter(Boolean))];
+
+            // If a specialty filter is applied, only return the clinic if it has that specialty
+            // (or if the clinic itself matched the search)
+            if (specialty) {
+                const specialtyRegex = new RegExp(specialty, "i");
+                const hasSpecialty = specialists.some(spec => specialtyRegex.test(spec));
+                if (!hasSpecialty) return null;
+            }
+
+            // Calculate live queue stats
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+
+            const queues = await Queue.find({
+                clinicId: clinic._id,
+                date: { $gte: today, $lt: tomorrow }
+            });
+            
+            let totalPatients = 0;
+            queues.forEach(q => {
+                if (q.entries) totalPatients += q.entries.length;
+            });
+            
+            const liveQueue = {
+                patients: totalPatients,
+                waitTime: totalPatients * 3
+            };
+
+            return {
+                ...clinic,
+                doctors: doctors,
+                doctorCount: doctors.length,
+                specialists: specialists,
+                liveQueue: liveQueue,
+                // Mock fields since they are not in the schema, 
+                // but frontend allows filtering and displays them
+                rating: 4.5 + Math.random() * 0.5, 
+                distance: Math.floor(Math.random() * 15) + 1 
+            };
+        }));
+
+        // Filter out nulls from the specialty filter
+        let finalClinics = results.filter(c => c !== null);
+
+        // Apply rating/distance filters if provided
+        if (rating) {
+            finalClinics = finalClinics.filter(c => c.rating >= parseFloat(rating));
+        }
+        if (distance) {
+            finalClinics = finalClinics.filter(c => c.distance <= parseFloat(distance));
+        }
+
+        return res.status(200).json({
+            message: "Clinics searched successfully",
+            clinics: finalClinics
+        });
+    } catch (error) {
+        console.log("Error in searchClinics", error);
+        return res.status(500).json({ message: "Error in searchClinics" });
+    }
+};
+
 
 export const getPublicClinics = async (req, res) => {
     try {
@@ -41,53 +135,51 @@ export const getPublicClinicDoctors = async (req, res) => {
 };
 
 export const addDoctorController = async (req, res) => {
-    try{
-        const {name, email, phone, specialization, schedule} = req.body
+    try {
+        const { doctorId } = req.body;
+        if (!doctorId) return res.status(400).json({ message: "A registered doctor is required" });
 
-        if(!name || !email || !phone || !specialization){
-            return res.status(400).json({
-                message: "Incomplete fields"
-            })
+        const doctor = await Doctor.findOne({ _id: doctorId, isActive: true })
+            .select("name email phone specialization isActive");
+        if (!doctor) return res.status(404).json({ message: "Registered doctor not found" });
+
+        const existingLink = await DoctorClinic.findOne({ doctorId: doctor._id, clinicId: req.clinic.id });
+        if (existingLink) return res.status(409).json({ message: "This doctor is already part of your clinic" });
+
+        const link = await DoctorClinic.create({ doctorId: doctor._id, clinicId: req.clinic.id });
+        return res.status(201).json({
+            message: "Doctor added to the clinic",
+            doctor: { ...link.toObject(), doctorId: doctor }
+        });
+    } catch (error) {
+        console.log("Error while adding doctor", error);
+        return res.status(500).json({ message: "Unable to add doctor to clinic" });
+    }
+};
+
+export const searchRegisteredDoctors = async (req, res) => {
+    try {
+        const search = String(req.query.search || "").trim();
+        const query = { isActive: true };
+        if (search) {
+            const expression = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+            query.$or = [{ name: expression }, { email: expression }, { specialization: expression }, { phone: expression }];
         }
 
-        const doctorExists = await Doctor.findOne({ email })
+        const doctors = await Doctor.find(query)
+            .select("name email phone specialization isActive")
+            .sort({ name: 1 })
+            .limit(20)
+            .lean();
+        const currentLinks = await DoctorClinic.find({ clinicId: req.clinic.id }).select("doctorId").lean();
+        const linkedDoctorIds = new Set(currentLinks.map((link) => String(link.doctorId)));
 
-        if(doctorExists){
-            await DoctorClinic.create({
-                doctorId: doctorExists._id,
-                clinicId: req.clinic.id,
-            })
-
-            return res.status(200).json({
-                message: "doctor added to the clinic"
-            })
-        }
-
-        const doctor = await Doctor.create({
-            name,
-            email,
-            phone,
-            specialization,
-            schedule
-        })
-
-        await DoctorClinic.create({
-            doctorId: doctor._id,
-            clinicId: req.clinic.id,
-        })
-
-        return res.status(200).json({
-            message: "doctor added to the clinic"
-        })
-
+        return res.json({ doctors: doctors.map((doctor) => ({ ...doctor, isLinked: linkedDoctorIds.has(String(doctor._id)) })) });
+    } catch (error) {
+        console.log("Error while searching doctors", error);
+        return res.status(500).json({ message: "Unable to search registered doctors" });
     }
-    catch(error){
-        console.log("Error while adding doctor in clinic.controllers.js file", error)
-        return res.status(500).json({
-            message: "Error while adding doctor in clinic.controllers.js file"
-        })
-    }
-}
+};
 
 
 export const getClinicDoctors = async (req, res) => {

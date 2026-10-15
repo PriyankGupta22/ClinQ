@@ -19,6 +19,11 @@ const queueSchema = new mongoose.Schema(
       required: true,
     },
 
+    delayApplied: {
+      type: Number,
+      default: 0
+    },
+    
     entries: [
       {
         type: mongoose.Schema.Types.ObjectId,

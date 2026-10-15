@@ -2,6 +2,11 @@ import User from "../models/User.models.js"
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 
+const issueTokens = (user) => ({
+    accessToken: jwt.sign({ id: user._id, name: user.name, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: "15m" }),
+    refreshToken: jwt.sign({ id: user._id, role: user.role }, process.env.REFRESH_JWT_SECRET, { expiresIn: "7d" })
+})
+
 export const registerUser = async (req, res) => {
     try{
         const {name, email, password} = req.body
@@ -21,16 +26,14 @@ export const registerUser = async (req, res) => {
         
         const hashedPassword = await bcrypt.hash(password, 12)
 
-        await User.create({
+        const user = await User.create({
             name, 
             email,
             password : hashedPassword,
             role: "patient"
         })
 
-        return res.status(201).json({
-            message: "User registered successfully"
-        })
+        return res.status(201).json({ message: "User registered successfully", ...issueTokens(user), user: { id: user._id, name: user.name, email: user.email, role: user.role } })
 
     }
     catch(error){
@@ -67,33 +70,7 @@ export const loginUser = async (req, res) => {
             })
         }
 
-        const accesstoken = jwt.sign(
-            {
-                id: doesExist._id,
-                name: doesExist.name,
-                email: doesExist.email
-            },
-            process.env.JWT_SECRET,
-            {
-                expiresIn: "15m"
-            }
-        )
-
-        const refreshToken = jwt.sign(
-            {
-                id: doesExist._id
-            },
-            process.env.REFRESH_JWT_SECRET,
-            {
-                expiresIn: "7d"
-            }
-        )
-
-        return res.status(200).json({
-            message: "Login Successful",
-            accesstoken,
-            refreshToken
-        })
+        return res.status(200).json({ message: "Login Successful", ...issueTokens(doesExist), user: { id: doesExist._id, name: doesExist.name, email: doesExist.email, role: doesExist.role } })
 
     }
     catch(error){
@@ -120,15 +97,7 @@ export const refreshAccessToken = (req, res) => {
         process.env.REFRESH_JWT_SECRET
     )
 
-    const accessToken = jwt.sign(
-        {
-            id: decoded.id
-        },
-        process.env.JWT_SECRET,
-        {
-            expiresIn: "15m"
-        }
-    )
+    const accessToken = jwt.sign({ id: decoded.id, role: decoded.role || "patient" }, process.env.JWT_SECRET, { expiresIn: "95m" })
 
     return res.status(200).json({
         message: "Generated access from refresh tokens successfully",

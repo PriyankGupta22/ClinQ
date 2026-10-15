@@ -1,0 +1,3 @@
+import { request } from './client'
+
+export const clinicApi = { dashboardStats: (token) => request('get', '/api/clinic/dashboard-stats', null, token), doctors: (token) => request('get', '/api/clinic/doctor', null, token), searchDoctors: (search, token) => request('get', `/api/clinic/doctor/search?search=${encodeURIComponent(search)}`, null, token), addDoctor: (doctorId, token) => request('post', '/api/clinic/doctor', { doctorId }, token), removeDoctor: (doctorId, token) => request('delete', `/api/clinic/doctor/${doctorId}`, null, token), updateSchedule: (doctorId, schedule, token) => request('put', `/api/clinic/doctor/${doctorId}/schedule`, { schedule }, token) }
