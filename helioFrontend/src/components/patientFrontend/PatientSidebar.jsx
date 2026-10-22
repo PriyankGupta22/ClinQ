@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { IoMdMenu } from "react-icons/io";
 import gsap from "gsap";
+import AuthenticatedIdentity from "../AuthenticatedIdentity";
 
 
 // =====================================================
@@ -51,7 +52,7 @@ const menuItems = [
 // DOCTOR SIDEBAR
 // =====================================================
 
-const PatientSidebar = ({ collapsed, setCollapsed }) => {
+const PatientSidebar = ({ collapsed, setCollapsed, onSignOut }) => {
 
   const [hoveredItem, setHoveredItem] = useState(null);
   const [time, setTime] = useState(new Date());
@@ -303,6 +304,11 @@ const PatientSidebar = ({ collapsed, setCollapsed }) => {
           PATIENT PROFILE
       ================================================= */}
 
+      <AuthenticatedIdentity role="patient">{profile => {
+        const name = profile?.name || "";
+        const parts = name.split(/\s+/).filter(Boolean);
+        const initials = parts.length ? `${Array.from(parts[0])[0]}${parts.length > 1 ? Array.from(parts.at(-1))[0] : ""}`.toLocaleUpperCase() : "?";
+        return (
       <div
         className={`
           mt-11
@@ -339,7 +345,7 @@ const PatientSidebar = ({ collapsed, setCollapsed }) => {
             text-[#E1F2EE]
           "
         >
-          A
+          {initials}
         </div>
 
 
@@ -356,7 +362,7 @@ const PatientSidebar = ({ collapsed, setCollapsed }) => {
                 text-[#EAF5F2]
               "
             >
-              Patient Portal
+              {name || "Patient"}
             </h3>
 
 
@@ -376,6 +382,9 @@ const PatientSidebar = ({ collapsed, setCollapsed }) => {
 
       </div>
 
+
+        );
+      }}</AuthenticatedIdentity>
 
       {/* =================================================
           MENU
@@ -711,7 +720,7 @@ const PatientSidebar = ({ collapsed, setCollapsed }) => {
         ================================================= */}
 
         <button
-          onClick={() => navigate("/")}
+          onClick={onSignOut}
 
           className={`
             flex

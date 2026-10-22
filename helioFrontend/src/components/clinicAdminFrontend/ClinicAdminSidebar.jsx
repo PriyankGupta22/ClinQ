@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { IoMdMenu } from "react-icons/io";
 import gsap from "gsap";
+import AuthenticatedIdentity from "../AuthenticatedIdentity";
 
 // =====================================================
 // MENU ITEMS
@@ -234,6 +235,11 @@ const ClinicAdminSidebar = ({ collapsed, setCollapsed, onSignOut }) => {
           CLINIC PROFILE
       ================================================= */}
 
+      <AuthenticatedIdentity role="clinic">{profile => {
+        const name = profile?.clinicName || profile?.name || "";
+        const parts = name.split(/\s+/).filter(Boolean);
+        const initials = parts.length ? `${Array.from(parts[0])[0]}${parts.length > 1 ? Array.from(parts.at(-1))[0] : ""}`.toLocaleUpperCase() : "?";
+        return (
       <div
         className={`
           mt-11
@@ -261,7 +267,7 @@ const ClinicAdminSidebar = ({ collapsed, setCollapsed, onSignOut }) => {
             text-[#E8E0EB]
           "
         >
-          C
+          {initials}
         </div>
 
         {/* CLINIC NAME */}
@@ -275,7 +281,7 @@ const ClinicAdminSidebar = ({ collapsed, setCollapsed, onSignOut }) => {
                 text-[#EEE8F0]
               "
             >
-              City Care Clinic
+              {name || "Clinic"}
             </h3>
 
             <p
@@ -290,6 +296,9 @@ const ClinicAdminSidebar = ({ collapsed, setCollapsed, onSignOut }) => {
           </div>
         )}
       </div>
+
+        );
+      }}</AuthenticatedIdentity>
 
       {/* =================================================
           MENU

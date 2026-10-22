@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
 import Layout from './components/Layout'
@@ -73,13 +74,23 @@ function HealioRoutes() {
     const landingPage = accountType === 'clinic' ? '/clinic/dashboard' : accountType === 'doctor' ? '/doctor/dashboard' : '/patient/dashboard'
     navigate(landingPage)
   }
-  const logout = () => {
-    const key = identity === 'clinic' ? 'clinicAccessToken' : identity === 'doctor' ? 'doctorAccessToken' : 'patientAccessToken'
-    localStorage.removeItem(key)
-    if (identity === 'clinic') setClinicToken('')
-    else if (identity === 'doctor') setDoctorToken('')
+  const logout = (accountType = identity) => {
+    // Existing click handlers pass an event; the doctor layout passes its role.
+    const role = typeof accountType === 'string' ? accountType : identity
+    for (const key of [`${role}AccessToken`, `${role}RefreshToken`]) {
+      localStorage.removeItem(key)
+      sessionStorage.removeItem(key)
+    }
+    // Unmount protected content before publishing the authentication change so
+    // a guard redirect cannot override the original login page destination.
+    flushSync(() => navigate(`/${role}/signup?mode=login`, { replace: true }))
+    if (role === 'doctor') setDoctorToken('')
+    else if (role === 'clinic') setClinicToken('')
     else setPatientToken('')
-    navigate('/login')
+    setResponse(null)
+    setAppointments([])
+    chooseIdentity(role)
+    window.dispatchEvent(new Event(`${role}-auth-changed`))
   }
   const go = (page, options) => navigate(`/${page === 'auth' ? 'login' : page}`, options)
 
@@ -104,7 +115,7 @@ function HealioRoutes() {
     <Route path="/clinic/signup" element={<ClinicSignup onLogin={login} />} />
     <Route path="/doctor/signup" element={<DoctorSignup />} />
     <Route path="/patient/signup" element={<PatientSignup />} />
-    <Route path="/patient" element={<ProtectedRoute token={patientToken} requiredRole="patient"><PatientLayout /></ProtectedRoute>}>
+    <Route path="/patient" element={<ProtectedRoute token={patientToken} requiredRole="patient" loginPath="/patient/signup?mode=login"><PatientLayout onSignOut={() => logout('patient')} /></ProtectedRoute>}>
       <Route path="dashboard" element={<PatientDashboard />} />
       <Route path="clinics" element={<PatientClinics />} />
       <Route path="clinic-doctors" element={<PatientClinicDoctors />} />
@@ -114,7 +125,7 @@ function HealioRoutes() {
       <Route path="prescriptions" element={<PatientPrescriptionsPage {...pageProps} />} />
       <Route path="profile" element={<PatientProfile />} />
     </Route>
-    <Route path="/doctor" element={<ProtectedRoute token={doctorToken} requiredRole="doctor"><DoctorLayout /></ProtectedRoute>}>
+    <Route path="/doctor" element={<ProtectedRoute token={doctorToken} requiredRole="doctor" loginPath="/doctor/signup?mode=login"><DoctorLayout onSignOut={() => logout('doctor')} /></ProtectedRoute>}>
       <Route path="dashboard" element={<DoctorDashboard />} />
       <Route path="clinics" element={<DoctorClinics />} />
       <Route path="queues" element={<DoctorQueue {...pageProps} />} />
@@ -123,7 +134,7 @@ function HealioRoutes() {
       <Route path="prescription" element={<Prescriptions {...pageProps} consultation={location.state?.consultation} />} />
       <Route path="prescriptions" element={<DoctorPrescriptionList {...pageProps} />} />
     </Route>
-    <Route path="/clinic" element={<ClinicAdminLayout onSignOut={logout} />}>
+    <Route path="/clinic" element={<ProtectedRoute token={clinicToken} requiredRole="clinicAdmin" loginPath="/clinic/signup?mode=login"><ClinicAdminLayout onSignOut={() => logout('clinic')} /></ProtectedRoute>}>
       <Route index element={<Navigate to="dashboard" replace />} />
       <Route path="dashboard" element={<ClinicAdminDashboard />} />
       <Route path="doctors" element={<ClinicAdminDoctors />} />

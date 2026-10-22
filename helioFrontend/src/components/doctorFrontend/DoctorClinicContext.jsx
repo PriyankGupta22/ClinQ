@@ -1,43 +1,48 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { readApiError, request } from "../../api/client";
+import { dashboardDemoEnabled, requestDashboard } from "../../api/dashboardRequest";
+import { subscribeAuthenticatedIdentity } from "../../api/authenticatedIdentity";
 
 const DoctorClinicContext = createContext(null);
+const readToken = () => localStorage.getItem("doctorAccessToken") || "";
+const noClinics = [];
 
 export function DoctorClinicProvider({ children }) {
-  const token = localStorage.getItem("doctorAccessToken");
-  const [clinics, setClinics] = useState([]);
-  const [selectedClinicId, setSelectedClinicId] = useState(
-    localStorage.getItem("doctorSelectedClinicId") || ""
-  );
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const token = useSyncExternalStore(subscribeAuthenticatedIdentity, readToken);
+  const [result, setResult] = useState(null);
+  const [selection, setSelection] = useState(null);
+  const current = token && result?.token === token ? result : null;
+  const clinics = current?.clinics || noClinics;
+  const selectedClinicId = selection?.token === token && clinics.some(clinic => clinic.id === selection.id)
+    ? selection.id : current?.selectedClinicId || "";
+  const loading = Boolean(token && !current);
+  const error = current?.error || "";
 
   useEffect(() => {
     let active = true;
+    const isCurrent = () => active && token === readToken();
+    if (!token) return () => { active = false; };
 
-    request("get", "/api/doctor-auth/clinics", null, token)
+    const load = dashboardDemoEnabled
+      ? requestDashboard("get", "/api/dashboard/doctor", null, token).then(data => ({
+        clinics: (data.clinics || []).map(clinic => ({ clinicId: clinic })),
+      }))
+      : request("get", "/api/doctor-auth/clinics", null, token);
+    load
       .then((data) => {
-        if (!active) return;
-        const availableClinics = (data?.clinics || []).map((link) => ({
+        if (!isCurrent()) return;
+        const availableClinics = (data?.clinics || []).filter(link => link?.clinicId?._id &&
+          link.clinicId.isActive !== false).map((link) => ({
           id: link.clinicId._id,
           name: link.clinicId.clinicName,
           address: link.clinicId.address,
         }));
-        setClinics(availableClinics);
-        setSelectedClinicId((current) => {
-          const stillAvailable = availableClinics.some((clinic) => clinic.id === current);
-          const nextId = stillAvailable ? current : availableClinics[0]?.id || "";
-          if (nextId) localStorage.setItem("doctorSelectedClinicId", nextId);
-          else localStorage.removeItem("doctorSelectedClinicId");
-          return nextId;
-        });
-        setError("");
+        const stored = localStorage.getItem("doctorSelectedClinicId");
+        const nextId = availableClinics.some(clinic => clinic.id === stored) ? stored : availableClinics[0]?.id || "";
+        setResult({ token, clinics: availableClinics, selectedClinicId: nextId });
       })
       .catch((requestError) => {
-        if (active) setError(readApiError(requestError).message || "Could not load your clinics.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
+        if (isCurrent()) setResult({ token, clinics: [], error: readApiError(requestError).message || "Could not load your clinics." });
       });
 
     return () => {
@@ -45,11 +50,18 @@ export function DoctorClinicProvider({ children }) {
     };
   }, [token]);
 
-  const selectClinic = (clinicId) => {
-    if (!clinics.some((clinic) => clinic.id === clinicId)) return;
-    setSelectedClinicId(clinicId);
-    localStorage.setItem("doctorSelectedClinicId", clinicId);
-  };
+  useEffect(() => {
+    // Persist only after verifying the available clinics. A dashboard selection
+    // made while affiliations are loading wins over the saved/default clinic.
+    if (!token || loading || dashboardDemoEnabled || token !== readToken()) return;
+    if (selectedClinicId) localStorage.setItem("doctorSelectedClinicId", selectedClinicId);
+    else localStorage.removeItem("doctorSelectedClinicId");
+  }, [token, loading, selectedClinicId]);
+
+  const selectClinic = useCallback((clinicId) => {
+    if (!clinicId || (!loading && !clinics.some((clinic) => clinic.id === clinicId))) return;
+    setSelection({ token, id: clinicId });
+  }, [clinics, token, loading]);
 
   const value = useMemo(() => ({
     clinics,
@@ -58,7 +70,7 @@ export function DoctorClinicProvider({ children }) {
     loading,
     error,
     selectClinic,
-  }), [clinics, selectedClinicId, loading, error]);
+  }), [clinics, selectedClinicId, loading, error, selectClinic]);
 
   return <DoctorClinicContext.Provider value={value}>{children}</DoctorClinicContext.Provider>;
 }
