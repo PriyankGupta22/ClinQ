@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import patient from "../../assets/patient.png";
 import {
   FiMail,
@@ -12,7 +13,8 @@ import {
 import useRoleAuth from "../../hooks/useRoleAuth";
 
 const PatientSignup = () => {
-  const [isLogin, setIsLogin] = useState(false);
+  const { search } = useLocation();
+  const [isLogin, setIsLogin] = useState(() => new URLSearchParams(search).get("mode") === "login");
   const { error, submitting, submit } = useRoleAuth("patient");
 
   return (

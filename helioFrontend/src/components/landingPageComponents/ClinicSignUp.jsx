@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import clinic from "../../assets/clinic.png";
 import {
   FiMail,
@@ -11,7 +12,8 @@ import {
 import { readApiError, request } from "../../api/client";
 
 const ClinicSignup = ({ onLogin }) => {
-  const [isLogin, setIsLogin] = useState(false);
+  const { search } = useLocation();
+  const [isLogin, setIsLogin] = useState(() => new URLSearchParams(search).get("mode") === "login");
   const [form, setForm] = useState({ clinicName: "", email: "", password: "", phone: "", description: "", location: "" });
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");

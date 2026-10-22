@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { captureAuthenticatedIdentity, invalidateAuthenticatedIdentity } from './authenticatedIdentity'
 
 export const api = axios.create({ baseURL: localStorage.getItem('apiBase') || 'http://localhost:5000' })
 
@@ -9,8 +10,18 @@ export function setApiBase(baseUrl) {
 }
 
 export async function request(method, path, data, token = '') {
-  const result = await api({ method, url: path, data, headers: token ? { Authorization: `Bearer ${token}` } : {} })
-  return result.data
+  try {
+    const result = await api({ method, url: path, data, headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    await captureAuthenticatedIdentity(method, path, result.data, token)
+    return result.data
+  } catch (error) {
+    if (token && error.response?.status === 401) {
+      for (const role of ['doctor', 'clinic', 'patient']) {
+        if (localStorage.getItem(`${role}AccessToken`) === token) invalidateAuthenticatedIdentity(role, token)
+      }
+    }
+    throw error
+  }
 }
 
 export function readApiError(error) {

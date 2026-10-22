@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { IoMdMenu } from "react-icons/io";
 import gsap from "gsap";
+import AuthenticatedIdentity from "../AuthenticatedIdentity";
 
 
 // =====================================================
@@ -42,7 +43,7 @@ const menuItems = [
 // DOCTOR SIDEBAR
 // =====================================================
 
-const DoctorSidebar = () => {
+const DoctorSidebar = ({ onSignOut }) => {
 
   const [collapsed, setCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState(null);
@@ -284,6 +285,12 @@ const DoctorSidebar = () => {
           DOCTOR PROFILE
       ================================================= */}
 
+      <AuthenticatedIdentity role="doctor">{doctor => {
+        const name = typeof doctor?.name === "string" ? doctor.name.trim() : "";
+        const specialization = typeof doctor?.specialization === "string" ? doctor.specialization.trim() : "";
+        const nameParts = name.replace(/^dr\.?\s+/i, "").split(/\s+/).filter(Boolean);
+        const initials = nameParts.length ? `${Array.from(nameParts[0])[0]}${nameParts.length > 1 ? Array.from(nameParts.at(-1))[0] : ""}`.toLocaleUpperCase() : "?";
+        return (
       <div
         className={`
           mt-11
@@ -320,7 +327,7 @@ const DoctorSidebar = () => {
             text-[#E0E5EF]
           "
         >
-          A
+          {initials}
         </div>
 
 
@@ -337,7 +344,7 @@ const DoctorSidebar = () => {
                 text-[#E7EAF1]
               "
             >
-              Aryan Sharma
+              {name || "Doctor unavailable"}
             </h3>
 
 
@@ -348,7 +355,7 @@ const DoctorSidebar = () => {
                 text-[#8995B0]
               "
             >
-              General Physician
+              {specialization || "Specialization unavailable"}
             </p>
 
           </div>
@@ -356,6 +363,8 @@ const DoctorSidebar = () => {
         )}
 
       </div>
+        );
+      }}</AuthenticatedIdentity>
 
 
       {/* =================================================
@@ -685,7 +694,7 @@ const DoctorSidebar = () => {
         ================================================= */}
 
         <button
-          onClick={() => navigate("/")}
+          onClick={onSignOut}
 
           className={`
             flex
