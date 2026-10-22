@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import doctor from "../../assets/doctor.png";
 import useRoleAuth from "../../hooks/useRoleAuth";
 import {
@@ -12,7 +13,8 @@ import {
 } from "react-icons/fi";
 
 const DoctorSignup = () => {
-  const [isLogin, setIsLogin] = useState(false);
+  const { search } = useLocation();
+  const [isLogin, setIsLogin] = useState(() => new URLSearchParams(search).get("mode") === "login");
   const { error, submitting, submit } = useRoleAuth("doctor");
 
   return (

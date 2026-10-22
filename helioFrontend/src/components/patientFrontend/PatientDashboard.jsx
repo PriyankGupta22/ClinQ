@@ -1,28 +1,62 @@
 import React, { useState, useEffect } from "react";
 import gsap from "gsap";
-import { request } from "../../api/client";
+import { readApiError } from "../../api/client";
+import { requestDashboard as request } from "../../api/dashboardRequest";
+import DashboardDemoIndicator from "../DashboardDemoIndicator";
 
-const ClinicSelector = () => {
+const unavailable = "\u2014";
+const countText = value => Number.isFinite(value) ? value : unavailable;
+const localDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+// Backend calendar labels are calendar dates, not UTC instants.
+const calendarDate = value => {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return localDate(date) === value ? date : null;
+};
+const appointmentDateText = value => {
+  if (calendarDate(value)) return value;
+  // selectedDay.date describes the selected bucket, not a persistent row label.
+  // Without a server timezone or a per-appointment calendar label, use the same
+  // explicit UTC fallback in every panel and for every calendar/clinic selection.
+  if (typeof value !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+      !calendarDate(value.slice(0, 10))) return "Date unavailable";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return `${String(date.getUTCFullYear()).padStart(4, "0")}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")} UTC`;
+};
+const timeText = value => {
+  if (typeof value !== "string" || !value) return unavailable;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? unavailable : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZoneName: "short" });
+};
+const recordId = value => typeof value === "string" ? value : value?._id;
+const statusText = value => typeof value === "string" && value ? value.charAt(0).toUpperCase() + value.slice(1) : unavailable;
+const queueDetails = queue => queue
+  ? `Queue #${countText(queue.queueNumber)} · ${statusText(queue.status)} · Estimated start ${timeText(queue.estimatedStartTime)}`
+  : "Queue unavailable";
+const queueRecords = data => {
+  const rows = [...(data?.selectedDay?.queueEntries || []), ...(data?.dailyQueue?.queueEntries || []), ...(data?.queueEntries || [])];
+  return rows.filter((row, index) => row && rows.findIndex(item => item?._id === row._id) === index);
+};
+const linkedQueue = (queues, appointment) => queues.find(queue => recordId(queue.appointmentId) && recordId(queue.appointmentId) === appointment._id);
+const appointmentRow = (row, queues) => {
+  const queue = linkedQueue(queues, row);
+  const name = row.doctorId?.name || queue?.doctorId?.name || "Doctor unavailable";
+  const date = appointmentDateText(row.appointmentDate);
+  return {
+    id: row._id, name, avatar: name.charAt(0), token: countText(queue?.queueNumber),
+    condition: `${row.clinicId?.clinicName || queue?.clinicId?.clinicName || "Clinic unavailable"} · ${date} · ${row.reason || "Reason unavailable"}`,
+    detail: `${queueDetails(queue)} · Stored appointment time ${timeText(queue?.appointmentTime)}`,
+    // Date-only bookings do not establish a consultation time.
+    time: timeText(queue?.appointmentTime), status: statusText(row.status),
+  };
+};
+
+const ClinicSelector = ({ clinics, selectedClinic, setSelectedClinic, notice, coverage }) => {
   const [open, setOpen] = useState(false);
-  const [clinics, setClinics] = useState([]);
-  const [selectedClinicId, setSelectedClinicId] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    request("get", "/api/clinic/public")
-      .then((result) => {
-        const availableClinics = result?.clinics || [];
-        setClinics(availableClinics);
-        setSelectedClinicId(availableClinics[0]?._id || "");
-      })
-      .catch((requestError) => {
-        setError(requestError.response?.data?.message || requestError.message || "Could not load clinics");
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  const selectedClinic = clinics.find((clinic) => clinic._id === selectedClinicId);
+  const selectedName = selectedClinic ? clinics.find(clinic => clinic._id === selectedClinic)?.clinicName || "Selected clinic" : "General";
 
   return (
     <div className="relative">
@@ -53,7 +87,7 @@ const ClinicSelector = () => {
           </p>
 
           <p className="mt-[3px] text-[12px] font-semibold text-[#F0F2F6]">
-            {loading ? "Loading clinics..." : selectedClinic?.clinicName || "No clinics available"}
+            {selectedName}
           </p>
         </div>
 
@@ -108,12 +142,40 @@ const ClinicSelector = () => {
             shadow-[0_15px_40px_rgba(15,25,50,0.18)]
           "
         >
+          {/* General */}
+          <button
+            onClick={() => {
+              setSelectedClinic("");
+              setOpen(false);
+            }}
+            className={`
+              w-full
+              rounded-[12px]
+              px-4
+              py-3
+              text-left
+              text-[12px]
+              font-medium
+              transition-all
+              duration-200
+              ${
+                !selectedClinic
+                  ? "bg-[#244D49] text-white"
+                  : "text-[#9AA6BC] hover:bg-[#1E413D] hover:text-[#E5E9F1]"
+              }
+            `}
+          >
+            General
+          </button>
+
           {/* Clinics */}
+          {clinics.length === 0 && <p role="status" className="px-4 py-3 text-[12px] font-medium text-[#9AA6BC]">{notice || "No clinic options"}</p>}
+          {coverage?.truncated && <p role="status" className="px-4 py-3 text-[12px] font-medium text-[#9AA6BC]">Showing the first {coverage.limit} clinic options</p>}
           {clinics.map((clinic) => (
             <button
               key={clinic._id}
               onClick={() => {
-                setSelectedClinicId(clinic._id);
+                setSelectedClinic(clinic._id);
                 setOpen(false);
               }}
               className={`
@@ -127,18 +189,15 @@ const ClinicSelector = () => {
                 transition-all
                 duration-200
                 ${
-                  selectedClinicId === clinic._id
+                  selectedClinic === clinic._id
                     ? "bg-[#244D49] text-white"
                     : "text-[#9AA6BC] hover:bg-[#1E413D] hover:text-[#E5E9F1]"
                 }
               `}
             >
-              {clinic.clinicName}
+              {clinic.clinicName || "Clinic unavailable"}
             </button>
           ))}
-          {!loading && clinics.length === 0 && (
-            <p className="px-4 py-3 text-[12px] text-[#9AA6BC]">{error || "No clinics available"}</p>
-          )}
         </div>
       )}
     </div>
@@ -146,107 +205,15 @@ const ClinicSelector = () => {
 };
 
 
-const SchedulePanel = () => {
-  const today = new Date();
-
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-  const [currentYear, setCurrentYear] = useState(today.getFullYear());
-
-  const [selectedDate, setSelectedDate] = useState(today.getDate());
-
-  /*
-    Ye dates hain jin din patient clinic mein gaya hai.
-
-    Format:
-    "YYYY-MM-DD"
-  */
-  const patientClinicDays = [
-    "2026-09-02",
-    "2026-09-04",
-    "2026-09-08",
-    "2026-09-10",
-    "2026-09-12",
-    "2026-09-15",
-    "2026-09-17",
-    "2026-09-19",
-    "2026-09-22",
-    "2026-09-25",
-    "2026-09-28",
-  ];
-
-  const appointmentData = {
-    "2026-09-17": [
-      {
-        name: "Rahul Sharma",
-        condition: "Fever & Cold",
-        time: "09:30 AM",
-        status: "Waiting",
-        avatar: "R",
-      },
-      {
-        name: "Ananya Singh",
-        condition: "Migraine",
-        time: "10:00 AM",
-        status: "Waiting",
-        avatar: "A",
-      },
-      {
-        name: "Vikash Kumar",
-        condition: "Blood Pressure",
-        time: "10:30 AM",
-        status: "Next",
-        avatar: "V",
-      },
-      {
-        name: "Neha Gupta",
-        condition: "General Checkup",
-        time: "11:00 AM",
-        status: "Upcoming",
-        avatar: "N",
-      },
-    ],
-
-    "2026-09-19": [
-      {
-        name: "Aman Verma",
-        condition: "Cough & Fever",
-        time: "09:30 AM",
-        status: "Waiting",
-        avatar: "A",
-      },
-      {
-        name: "Priya Mehta",
-        condition: "Headache",
-        time: "10:00 AM",
-        status: "Next",
-        avatar: "P",
-      },
-    ],
-
-    "2026-09-22": [
-      {
-        name: "Rohan Gupta",
-        condition: "Back Pain",
-        time: "09:00 AM",
-        status: "Waiting",
-        avatar: "R",
-      },
-      {
-        name: "Simran Kaur",
-        condition: "General Checkup",
-        time: "09:30 AM",
-        status: "Waiting",
-        avatar: "S",
-      },
-      {
-        name: "Karan Singh",
-        condition: "Diabetes",
-        time: "10:30 AM",
-        status: "Next",
-        avatar: "K",
-      },
-    ],
-  };
+const SchedulePanel = ({ data, selection, onChange, notice }) => {
+  const today = calendarDate(data?.dailyQueue?.date) || new Date();
+  const month = selection.month || data?.calendar?.month || localDate(today).slice(0, 7);
+  const [currentYear, monthNumber] = month.split("-").map(Number);
+  const currentMonth = monthNumber - 1;
+  const chosenDate = selection.date || data?.selectedDay?.date || localDate(today);
+  const selectedDate = Number(chosenDate.slice(-2));
+  const patientClinicDays = (data?.calendar?.month === month ? data.calendar.days || [] : [])
+    .filter(day => day.appointments > 0).map(day => day.date);
 
   const monthNames = [
     "January",
@@ -306,31 +273,30 @@ const SchedulePanel = () => {
     calendarDays.push(date);
   }
 
-  // Previous month
-  const handlePreviousMonth = () => {
-    if (currentMonth === 0) {
-      setCurrentMonth(11);
-      setCurrentYear(currentYear - 1);
-    } else {
-      setCurrentMonth(currentMonth - 1);
-    }
-
-    setSelectedDate(1);
+  const changeMonth = offset => {
+    const date = localDate(new Date(currentYear, currentMonth + offset, 1));
+    onChange({ month: date.slice(0, 7), date });
   };
+  const handlePreviousMonth = () => changeMonth(-1);
+  const handleNextMonth = () => changeMonth(1);
+  const selected = data?.selectedDay?.date === chosenDate ? data?.selectedDay : null;
+  const bookings = selected?.appointments || [];
+  const queues = selected?.queueEntries || [];
+  const selectedAppointments = bookings.map(row => {
+    const item = appointmentRow(row, queues);
+    const queue = linkedQueue(queues, row);
+    return { ...item, condition: `${item.condition} · ${queueDetails(queue)}`,
+      status: queue ? `${item.status} · ${statusText(queue.status)}` : item.status };
+  });
+  // Queue records whose appointments fall outside the capped list still belong here.
+  for (const queue of queues) {
+    if (bookings.some(row => row._id && row._id === recordId(queue.appointmentId))) continue;
+    const name = queue.doctorId?.name || "Doctor unavailable";
+    selectedAppointments.push({ id: `queue-${queue._id}`, name, avatar: name.charAt(0),
+      condition: `${queue.clinicId?.clinicName || "Clinic unavailable"} · ${queueDetails(queue)}`,
+      detail: queueDetails(queue), time: timeText(queue.appointmentTime), status: statusText(queue.status) });
+  }
 
-  // Next month
-  const handleNextMonth = () => {
-    if (currentMonth === 11) {
-      setCurrentMonth(0);
-      setCurrentYear(currentYear + 1);
-    } else {
-      setCurrentMonth(currentMonth + 1);
-    }
-
-    setSelectedDate(1);
-  };
-
-  const selectedAppointments = appointmentData[selectedDateString] || [];
 
   return (
     <aside
@@ -498,7 +464,7 @@ const SchedulePanel = () => {
                 className="flex h-[43px] items-center justify-center"
               >
                 <button
-                  onClick={() => setSelectedDate(date)}
+                  onClick={() => onChange({ month, date: dateString })}
                   className={`
                     relative
                     flex
@@ -559,7 +525,9 @@ const SchedulePanel = () => {
 
           <div>
             <p className="text-[9px] font-semibold uppercase tracking-[1.8px] text-[#71809D]">
-              QUEUE FOR THE DAY
+              APPOINTMENTS & QUEUE
+              · {countText(selected?.appointmentCount)} bookings · {countText(selected?.queueCount)} queue entries
+              {selected?.appointmentsTruncated || selected?.queuesTruncated ? " (limited lists)" : ""}
             </p>
 
             
@@ -578,7 +546,8 @@ const SchedulePanel = () => {
           {selectedAppointments.length > 0 ? (
             selectedAppointments.map((patient, index) => (
               <div
-                key={index}
+                key={patient.id || index}
+                title={patient.detail}
                 className="
                   flex
                   items-center
@@ -617,7 +586,7 @@ const SchedulePanel = () => {
                     {patient.name}
                   </p>
 
-                  <p className="mt-1 truncate text-[9px] text-[#8490A9]">
+                  <p title={patient.condition} className="mt-1 truncate text-[9px] text-[#8490A9]">
                     {patient.condition}
                   </p>
 
@@ -652,11 +621,11 @@ const SchedulePanel = () => {
               "
             >
               <p className="text-[11px] font-medium text-[#A0AABE]">
-                No visit scheduled
+                {notice || "No appointments or queue entries"}
               </p>
 
               <p className="mt-1 text-[9px] text-[#709C95]">
-                No appointment for this day
+                {notice ? "Selected-day details unavailable" : "No records for this day"}
               </p>
             </div>
           )}
@@ -668,11 +637,16 @@ const SchedulePanel = () => {
   );
 };
 
-const PatientStats = () => {
-  const totalPatients = 24;
-  const completedPatients = 16;
-  const remainingPatients = totalPatients - completedPatients;
-  const changeFromYesterday = 12;
+const PatientStats = ({ data, notice }) => {
+  const totalPatients = countText(data?.stats?.totalAppointments);
+  const completedPatients = countText(data?.stats?.completedAppointments);
+  const remainingPatients = countText(data?.stats?.upcomingAppointments);
+  const comparison = data?.comparison;
+  const matching = comparison?.metric === "completedAppointments";
+  const change = matching && comparison.previousDay > 0 && Number.isFinite(comparison.percentageChange)
+    ? comparison.percentageChange : null;
+  const changeFromYesterday = change === null ? unavailable : `${change > 0 ? "\u2191 " : change < 0 ? "\u2193 " : ""}${Math.abs(change).toFixed(1)}%`;
+
 
   return (
     <div className="grid w-[30%] min-w-[250px] shrink-0 grid-cols-2">
@@ -680,80 +654,80 @@ const PatientStats = () => {
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
             <span className="h-[9px] w-[9px] rounded-[2px] bg-[#B9F23D]"></span>
-            <span className="text-[10px] font-semibold tracking-[-0.1px] text-[#202D55]">TOTAL PATIENTS</span>
+            <span className="text-[10px] font-semibold tracking-[-0.1px] text-[#202D55]">TOTAL APPOINTMENTS</span>
           </div>
-          <span className="rounded-full bg-[#EAF5D1] px-2 py-1 text-[8px] font-semibold text-[#66851F]">↑ {changeFromYesterday}%</span>
+          <span className="rounded-full bg-[#EAF5D1] px-2 py-1 text-[8px] font-semibold text-[#66851F]">{countText(data?.stats?.activeQueues)} queues</span>
         </div>
 
         <div className="mt-5">
           <h2 className="text-[40px] font-medium leading-none tracking-[-2px] text-[#17312E]">{totalPatients}</h2>
-          <p className="mt-2 text-[10px] font-semibold uppercase tracking-[1.5px] text-[#8D96A7]">Today</p>
+          <p className="mt-2 text-[10px] font-semibold uppercase tracking-[1.5px] text-[#8D96A7]">All time</p>
         </div>
 
         <div className="mt-7 pt-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[1px] text-[#68738A]">PATIENT FLOW</p>
-          <p className="mt-1 text-[9px] uppercase tracking-[0.4px] text-[#9BA2AF]">Compared to yesterday</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[1px] text-[#68738A]">{notice || `Completed today: ${matching ? countText(comparison.currentDay) : unavailable}`}</p>
+          <p className="mt-1 text-[9px] uppercase tracking-[0.4px] text-[#9BA2AF]">{changeFromYesterday} compared to yesterday</p>
         </div>
       </div>
 
       <div className="bg-white p-4 rounded-bl-[20px]">
         <h2 className="text-[32px] font-medium leading-none tracking-[-1.5px] text-[#17312E]">{completedPatients}</h2>
         <p className="mt-2 text-[9px] font-semibold uppercase tracking-[1px] text-[#7D8799]">Completed</p>
-        <p className="mt-5 text-[10px] text-[#A0A7B3]">Visits completed</p>
+        <p className="mt-5 text-[10px] text-[#A0A7B3]">Consults today: {countText(data?.consultationStats?.completedConsultations)}</p>
       </div>
 
       <div className="bg-white p-4 rounded-br-[20px]">
-        <h2 className="text-[32px] font-medium leading-none tracking-[-1.5px] text-[#17312E]">{String(remainingPatients).padStart(2, "0")}</h2>
-        <p className="mt-2 text-[9px] font-semibold uppercase tracking-[1px] text-[#7D8799]">Remaining</p>
-        <p className="mt-5 text-[10px] text-[#A0A7B3]">Upcoming visits</p>
+        <h2 className="text-[32px] font-medium leading-none tracking-[-1.5px] text-[#17312E]">{remainingPatients}</h2>
+        <p className="mt-2 text-[9px] font-semibold uppercase tracking-[1px] text-[#7D8799]">Upcoming</p>
+        <p className="mt-5 text-[10px] text-[#A0A7B3]">Scheduled</p>
       </div>
     </div>
   );
 };
 
-const WeeklyPatientChart = () => {
-  const weeklyData = [
-    { day: "Thu", patients: 28 },
-    { day: "Fri", patients: 21 },
-    { day: "Sat", patients: 14 },
-    { day: "Sun", patients: 8 },
-    { day: "Mon", patients: 18 },
-    { day: "Tue", patients: 24 },
-    { day: "Wed", patients: 16 },
-    { day: "Thu", patients: 28 },
-    { day: "Fri", patients: 21 },
-    { day: "Sat", patients: 14 },
-    { day: "Sun", patients: 8 },
-  ];
-
-  const maxPatients = Math.max(...weeklyData.map((item) => item.patients));
+const WeeklyPatientChart = ({ data }) => {
+  const chartRef = React.useRef(null);
+  const end = calendarDate(data?.trend10Days?.at(-1)?.date) || new Date();
+  const weeklyData = Array.from({ length: 10 }, (_, index) => {
+    const date = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 9 + index);
+    const label = localDate(date);
+    const row = data?.trend10Days?.find(item => item.date === label);
+    return { date: label, day: date.toLocaleDateString("en-US", { weekday: "short" }),
+      patients: Number.isFinite(row?.completed) ? row.completed : null };
+  });
+  const maxPatients = Math.max(0, ...weeklyData.map(item => item.patients ?? 0));
+  const complete = weeklyData.every(item => item.patients !== null);
+  const peak = complete && maxPatients > 0 ? weeklyData.find(item => item.patients === maxPatients) : null;
 
   useEffect(() => {
-    gsap.fromTo(".weekly-chart-bar", { scaleY: 0, transformOrigin: "bottom" }, { scaleY: 1, duration: 0.8, ease: "power3.out", stagger: 0.1 });
-  }, []);
+    const context = gsap.context(() => {
+      gsap.fromTo(".weekly-chart-bar", { scaleY: 0, transformOrigin: "bottom" }, { scaleY: 1, duration: 0.8, ease: "power3.out", stagger: 0.1 });
+    }, chartRef);
+    return () => context.revert();
+  }, [data]);
 
   return (
-    <div className="h-[335px] min-w-0 flex-1 rounded-[20px] bg-white px-6 pb-1 pt-4.5">
+    <div ref={chartRef} className="h-[335px] min-w-0 flex-1 rounded-[20px] bg-white px-6 pb-1 pt-4.5">
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
             <span className="h-[9px] w-[9px] rounded-[2px] bg-[#202D55]"></span>
             <span className="text-[10px] font-semibold tracking-[-0.1px] text-[#202D55]">PATIENT ANALYTICS</span>
           </div>
-          <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.6px] text-[#17312E]">Your visit history</h3>
+          <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.6px] text-[#17312E]">Completed appointment history</h3>
         </div>
 
         <span className="rounded-full bg-[#E8F0FB] px-3 py-1.5 text-[8px] font-semibold text-[#202D55]">LAST 10 DAYS</span>
       </div>
 
       <div className="mt-7 flex h-[170px] items-end justify-between gap-3 px-2">
-        {weeklyData.map((item, index) => {
-          const height = (item.patients / maxPatients) * 100;
-          const isHighest = item.patients === maxPatients;
+        {weeklyData.map((item) => {
+          const height = maxPatients > 0 ? ((item.patients ?? 0) / maxPatients) * 100 : 0;
+          const isHighest = maxPatients > 0 && item.patients === maxPatients;
 
           return (
-            <div key={`${item.day}-${index}`} className="flex h-full flex-1 flex-col items-center justify-end">
-              <div className="mb-2 text-[8px] font-semibold text-[#8B95A7]">{item.patients}</div>
+            <div key={item.date} title={item.date} className="flex h-full flex-1 flex-col items-center justify-end">
+              <div className="mb-2 text-[8px] font-semibold text-[#8B95A7]">{countText(item.patients)}</div>
 
               <div className="flex h-[130px] w-full items-end justify-center">
                 <div className={`weekly-chart-bar min-w-[35px] max-w-[42px] rounded-full ${isHighest ? "bg-[#b6c9e1]" : "bg-[#131b33]"}`} style={{ height: `${height}%` }}></div>
@@ -767,26 +741,32 @@ const WeeklyPatientChart = () => {
 
       <div className="mt-4 flex items-center justify-between">
         <div>
-          <p className="text-[8px] font-semibold uppercase tracking-[1px] text-[#8B95A7]">Total visits</p>
-          <p className="mt-1 text-[18px] font-semibold tracking-[-0.5px] text-[#17312E]">{weeklyData.reduce((total, item) => total + item.patients, 0)}</p>
+          <p className="text-[8px] font-semibold uppercase tracking-[1px] text-[#8B95A7]">Completed appointments</p>
+          <p className="mt-1 text-[18px] font-semibold tracking-[-0.5px] text-[#17312E]">{complete ? weeklyData.reduce((total, item) => total + item.patients, 0) : unavailable}</p>
         </div>
 
         <div className="text-right">
           <p className="text-[8px] font-semibold uppercase tracking-[1px] text-[#8B95A7]">Peak Day</p>
-          <p className="mt-1 text-[11px] font-semibold text-[#202D55]">Thursday · 28</p>
+          <p className="mt-1 text-[11px] font-semibold text-[#202D55]">{peak ? `${peak.date} · ${peak.patients}` : unavailable}</p>
         </div>
       </div>
     </div>
   );
 };
 
-const AppointmentsOverview = () => {
+const AppointmentsOverview = ({ data, notice }) => {
+  const queues = queueRecords(data);
+  const upcoming = data?.upcomingAppointmentsList || [];
+  const history = data?.appointmentHistory || [];
+  const appointments = [...upcoming, ...history].map(row => appointmentRow(row, queues));
+  for (const queue of data?.queueEntries || []) {
+    if ([...upcoming, ...history].some(row => row._id && row._id === recordId(queue.appointmentId))) continue;
+    const name = queue.doctorId?.name || "Doctor unavailable";
+    appointments.push({ id: `queue-${queue._id}`, name, avatar: name.charAt(0), token: countText(queue.queueNumber),
+      condition: `${queue.clinicId?.clinicName || "Clinic unavailable"} · ${calendarDate(data?.dailyQueue?.date) ? data.dailyQueue.date : "Date unavailable"} · Queue entry`,
+      detail: queueDetails(queue), time: timeText(queue.appointmentTime), status: statusText(queue.status) });
+  }
 
-  const appointments = [
-  { time: "09:30 AM", name: "Rahul Sharma", condition: "Fever & Cold", token: "01", status: "Completed" },
-  { time: "10:00 AM", name: "Ananya Singh", condition: "Migraine", token: "02", status: "Completed" },
-  { time: "10:30 AM", name: "Vikash Kumar", condition: "Blood Pressure", token: "03", status: "Remaining" },
-];
 
   return (
     <div className="mt-4 w-full py-[1px]">
@@ -798,15 +778,20 @@ const AppointmentsOverview = () => {
               <span className="h-[9px] w-[9px] rounded-[2px] bg-[#8DC6B7]"></span>
               <span className="text-[9px] font-semibold tracking-[0.2px] text-[#202D55]">APPOINTMENTS</span>
             </div>
-            <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.6px] text-[#17312E]">Upcoming Today</h3>
+            <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.6px] text-[#17312E]">Upcoming & history</h3>
           </div>
 
-          <span className="text-[9px] font-medium text-[#8B95A7]">4 appointments</span>
+          <span className="text-[9px] font-medium text-[#8B95A7]">{countText(data?.stats?.upcomingAppointments)} upcoming · {countText(data?.stats?.totalAppointments)} total</span>
         </div>
 
         <div className="mt-6">
-          {appointments.map((appointment, index) => (
-            <div key={appointment.token} className={`flex items-center gap-4 py-3 border border-black/7 px-7 mb-3 rounded-full`}>
+          {!data && <p role="status" className="text-[9px] font-medium text-[#8B95A7]">{notice || "Appointments unavailable"}</p>}
+          {data && <p role="status" className="text-[9px] font-medium text-[#8B95A7]">Showing {upcoming.length} of {countText(data.stats?.upcomingAppointments)} upcoming appointments · {history.length} history records (up to 50)</p>}
+          {data && upcoming.length === 0 && <p role="status" className="text-[9px] font-medium text-[#8B95A7]">No upcoming appointments</p>}
+          {data && history.length === 0 && <p role="status" className="text-[9px] font-medium text-[#8B95A7]">No appointment history</p>}
+          {data && <p role="status" className="text-[9px] font-medium text-[#8B95A7]">{countText(data.stats?.activeQueues)} active queues today · {data.queueEntries?.length || 0} shown{data.queueEntries?.length ? "" : " · No active queue entries"}</p>}
+          {appointments.map((appointment) => (
+            <div key={appointment.id} title={appointment.detail} className={`flex items-center gap-4 py-3 border border-black/7 px-7 mb-3 rounded-full`}>
 
               <div className="text-right">
                 <p className="text-[22px] font-semibold text-[#202D55] mr-4">{appointment.token}</p>
@@ -818,7 +803,7 @@ const AppointmentsOverview = () => {
 
               <div className="min-w-0 flex-1">
                 <p className="text-[15px] font-semibold text-[#17312E]">{appointment.name}</p>
-                <p className="mt-1 text-[9px] text-[#8B95A7]">{appointment.condition}</p>
+                <p title={appointment.detail} className="mt-1 text-[9px] text-[#8B95A7]">{appointment.condition} · {appointment.detail}</p>
               </div>
 
               
@@ -856,25 +841,88 @@ const RightSideControls = () => {
 
 
 const PatientDashboard = () => {
+  const [selectedClinic, setSelectedClinic] = useState("");
+  const [selection, setSelection] = useState({ month: "", date: "" });
+  const [result, setResult] = useState(null);
+  const [options, setOptions] = useState(null);
+  const pendingRequest = React.useRef(null);
+  const token = localStorage.getItem("patientAccessToken") || "";
+  const params = new URLSearchParams();
+  if (selectedClinic) params.set("clinicId", selectedClinic);
+  if (selection.month) params.set("month", selection.month);
+  if (selection.date) params.set("date", selection.date);
+  const path = `/api/dashboard/patient${params.size ? `?${params}` : ""}`;
+  const current = result?.path === path && result?.token === token ? result : null;
+  const data = current?.data || null;
+  const notice = !token ? "Sign in to view your patient dashboard." : current?.error ||
+    (!current || current.loading ? "Loading patient dashboard..." : "");
+  const clinics = options?.token === token ? options.clinics : [];
+  const changeClinic = clinicId => {
+    if (clinicId === selectedClinic) return;
+    setResult(null);
+    setSelectedClinic(clinicId);
+  };
+  const changeSelection = next => {
+    if (next.month === selection.month && next.date === selection.date) return;
+    setResult(null);
+    setSelection(next);
+  };
+
+  useEffect(() => {
+    let active = true;
+    if (!token) {
+      return () => { active = false; };
+    }
+    // Share only an in-flight request during development StrictMode effect replay.
+    if (pendingRequest.current?.path !== path || pendingRequest.current?.token !== token) {
+      const pending = { path, token, promise: request("GET", path, undefined, token) };
+      pendingRequest.current = pending;
+      const clear = () => { if (pendingRequest.current === pending) pendingRequest.current = null; };
+      pending.promise.then(clear, clear);
+    }
+    pendingRequest.current.promise.then(response => {
+      if (!active) return;
+      if (response?.success !== true || response?.dashboard !== "patient" ||
+          (response.appliedFilters?.clinicId || "") !== selectedClinic) {
+        setResult({ path, token, error: "Dashboard response is unavailable for this selection." });
+        return;
+      }
+      setOptions({ token, clinics: (response.selectorClinics || []).filter(clinic => clinic?._id), coverage: response.selectorCoverage });
+      setResult({ path, token, data: response });
+    }).catch(error => {
+      if (!active) return;
+      const details = readApiError(error);
+      const messages = {
+        401: "Your patient session has expired or is invalid. Please sign in again.",
+        403: "Access denied for this patient or clinic selection.",
+        404: "Patient not found.",
+        500: "Unable to load the patient dashboard. Please try again later.",
+      };
+      setResult({ path, token, error: messages[error.response?.status] || details?.message || "Unable to load the patient dashboard." });
+    });
+    return () => { active = false; };
+  }, [path, token, selectedClinic]);
+
   return (
     <div className="relative min-h-screen bg-[#F8F9F7] p-[15px] pr-[calc(25%+15px)]">
+      <DashboardDemoIndicator />
       
       {/* Dashboard Header */}
       <header>
-        <SchedulePanel />
+        <SchedulePanel data={data} selection={selection} onChange={changeSelection} notice={notice} />
         <div className="w-full">
           {/* <ClinicSelector /> */}
           
           <div className="flex w-full items-center justify-between">
-            <ClinicSelector />
+            <ClinicSelector clinics={clinics} selectedClinic={selectedClinic} setSelectedClinic={changeClinic} notice={notice} coverage={options?.token === token ? options.coverage : null} />
             <RightSideControls />
           </div>
 
           <div className="mt-4 flex w-full items-stretch gap-4">
-            <PatientStats />
-            <WeeklyPatientChart />
+            <PatientStats data={data} notice={notice} />
+            <WeeklyPatientChart data={data} />
           </div>
-          <AppointmentsOverview />
+          <AppointmentsOverview data={data} notice={notice} />
         </div>
       </header>
 

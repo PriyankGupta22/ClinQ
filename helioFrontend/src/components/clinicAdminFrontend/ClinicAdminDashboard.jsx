@@ -1,26 +1,37 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import gsap from "gsap";
+import { readApiError } from "../../api/client";
+import { requestDashboard as request } from "../../api/dashboardRequest";
+import DashboardDemoIndicator from "../DashboardDemoIndicator";
+
+const unavailable = "—";
+const countText = value => Number.isFinite(value) ? value : unavailable;
+const localDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const calendarDate = value => {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return localDate(date) === value ? date : null;
+};
+const timeText = value => {
+  if (!value) return unavailable;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? unavailable : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+};
 // =====================================================
 // CLINIC CALENDAR
 // =====================================================
 
-const DoctorSelector = () => {
+const DoctorSelector = ({ doctors, selectedDoctor, setSelectedDoctor }) => {
   const [open, setOpen] = useState(false);
-
-  const doctors = [
-    "Dr. Aryan Sharma",
-    "Dr. Neha Kapoor",
-    "Dr. Rahul Verma",
-  ];
-
-  const [selectedDoctor, setSelectedDoctor] = useState("General");
+  const selectedName = selectedDoctor ? doctors.find(doctor => doctor._id === selectedDoctor)?.name || "Selected doctor" : "General";
 
   return (
     <div className="relative">
       <button onClick={() => setOpen(!open)} className="flex h-[58px] min-w-[245px] items-center justify-between rounded-full border border-[#3D2B45] bg-[#28172F] px-5 text-left transition-all duration-200 hover:bg-[#32203A]">
         <div>
           <p className="text-[9px] font-semibold uppercase tracking-[1.5px] text-[#A59CA9]">Doctors</p>
-          <p className="mt-[3px] text-[12px] font-semibold text-[#F5F1F6]">{selectedDoctor}</p>
+          <p className="mt-[3px] text-[12px] font-semibold text-[#F5F1F6]">{selectedName}</p>
         </div>
 
         <div className={`ml-5 flex h-[30px] w-[30px] items-center justify-center rounded-[8px] transition-all duration-200 ${open ? "rotate-180" : ""}`}>
@@ -32,11 +43,11 @@ const DoctorSelector = () => {
 
       {open && (
         <div className="absolute left-0 top-[66px] z-50 w-full overflow-hidden rounded-[18px] bg-[#28172F] p-2 shadow-[0_15px_40px_rgba(40,23,47,0.22)]">
-          <button onClick={() => { setSelectedDoctor("General"); setOpen(false); }} className={`w-full rounded-[12px] px-4 py-3 text-left text-[12px] font-medium transition-all duration-200 ${selectedDoctor === "General" ? "bg-[#3D2B45] text-white" : "text-[#A59CA9] hover:bg-[#32203A] hover:text-[#F0EBF2]"}`}>General</button>
+          <button onClick={() => { setSelectedDoctor(""); setOpen(false); }} className={`w-full rounded-[12px] px-4 py-3 text-left text-[12px] font-medium transition-all duration-200 ${!selectedDoctor ? "bg-[#3D2B45] text-white" : "text-[#A59CA9] hover:bg-[#32203A] hover:text-[#F0EBF2]"}`}>General</button>
 
           {doctors.map((doctor) => (
-            <button key={doctor} onClick={() => { setSelectedDoctor(doctor); setOpen(false); }} className={`w-full rounded-[12px] px-4 py-3 text-left text-[12px] font-medium transition-all duration-200 ${selectedDoctor === doctor ? "bg-[#3D2B45] text-white" : "text-[#A59CA9] hover:bg-[#32203A] hover:text-[#F0EBF2]"}`}>
-              {doctor}
+            <button key={doctor._id} onClick={() => { setSelectedDoctor(doctor._id); setOpen(false); }} className={`w-full rounded-[12px] px-4 py-3 text-left text-[12px] font-medium transition-all duration-200 ${selectedDoctor === doctor._id ? "bg-[#3D2B45] text-white" : "text-[#A59CA9] hover:bg-[#32203A] hover:text-[#F0EBF2]"}`}>
+              {doctor.name || "Doctor unavailable"}
             </button>
           ))}
         </div>
@@ -45,30 +56,20 @@ const DoctorSelector = () => {
   );
 };
 
-const ClinicCalendar = () => {
-  const today = new Date();
-
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-  const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [selectedDate, setSelectedDate] = useState(today.getDate());
+const ClinicCalendar = ({ data, selection, onChange }) => {
+  const today = calendarDate(data?.trend10Days?.at(-1)?.date) || new Date();
+  const month = selection?.month || data?.calendar?.month || localDate(today).slice(0, 7);
+  const [currentYear, monthNumber] = month.split("-").map(Number);
+  const currentMonth = monthNumber - 1;
+  const chosenDate = selection?.date || data?.selectedDay?.date || localDate(today);
+  const selectedDate = Number(chosenDate.slice(-2));
 
   // ===================================================
   // CLINIC DAYS
   // ===================================================
 
-  const clinicDays = [
-    "2026-09-02",
-    "2026-09-04",
-    "2026-09-08",
-    "2026-09-10",
-    "2026-09-12",
-    "2026-09-15",
-    "2026-09-17",
-    "2026-09-19",
-    "2026-09-22",
-    "2026-09-25",
-    "2026-09-28",
-  ];
+  const clinicDays = (data?.calendar?.month === month ? data.calendar.days || [] : [])
+    .filter(day => day.appointments > 0).map(day => day.date);
 
   // ===================================================
   // MONTHS
@@ -140,31 +141,13 @@ const ClinicCalendar = () => {
   // PREVIOUS MONTH
   // ===================================================
 
-  const handlePreviousMonth = () => {
-    if (currentMonth === 0) {
-      setCurrentMonth(11);
-      setCurrentYear(currentYear - 1);
-    } else {
-      setCurrentMonth(currentMonth - 1);
-    }
-
-    setSelectedDate(1);
+  const changeMonth = offset => {
+    const date = new Date(currentYear, currentMonth + offset, 1);
+    const dateString = localDate(date);
+    onChange({ month: dateString.slice(0, 7), date: dateString });
   };
-
-  // ===================================================
-  // NEXT MONTH
-  // ===================================================
-
-  const handleNextMonth = () => {
-    if (currentMonth === 11) {
-      setCurrentMonth(0);
-      setCurrentYear(currentYear + 1);
-    } else {
-      setCurrentMonth(currentMonth + 1);
-    }
-
-    setSelectedDate(1);
-  };
+  const handlePreviousMonth = () => changeMonth(-1);
+  const handleNextMonth = () => changeMonth(1);
 
   // ===================================================
   // JSX
@@ -335,7 +318,7 @@ const ClinicCalendar = () => {
                 "
               >
                 <button
-                  onClick={() => setSelectedDate(date)}
+                  onClick={() => onChange({ month, date: formatDate(currentYear, currentMonth, date) })}
                   className={`
                     relative
                     flex
@@ -370,11 +353,12 @@ const ClinicCalendar = () => {
   );
 };
 
-const PatientStats = () => {
-  const totalPatients = 24;
-  const completedPatients = 16;
-  const remainingPatients = totalPatients - completedPatients;
-  const changeFromYesterday = 12;
+const PatientStats = ({ data, notice }) => {
+  const totalPatients = countText(data?.stats?.activePatientsToday);
+  const completedPatients = countText(data?.consultationStats?.patientsServed);
+  const remainingPatients = countText(data?.stats?.waitingPatients);
+  const percentage = data?.comparison?.percentageChange;
+  const changeFromYesterday = Number.isFinite(percentage) ? `${percentage < 0 ? "↓" : "↑"} ${Math.abs(percentage).toLocaleString(undefined, { maximumFractionDigits: 1 })}%` : unavailable;
 
   return (
     <div className="grid grid-cols-2">
@@ -382,9 +366,9 @@ const PatientStats = () => {
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
             <span className="h-[9px] w-[9px] rounded-[2px] bg-[#B9F23D]"></span>
-            <span className="text-[10px] font-semibold tracking-[-0.1px] text-[#28172F]">TOTAL PATIENTS</span>
+            <span className="text-[10px] font-semibold tracking-[-0.1px] text-[#28172F]">ACTIVE PATIENTS</span>
           </div>
-          <span className="rounded-full bg-[#EAF5D1] px-2 py-1 text-[8px] font-semibold text-[#66851F]">↑ {changeFromYesterday}%</span>
+          <span className="rounded-full bg-[#EAF5D1] px-2 py-1 text-[8px] font-semibold text-[#66851F]">{changeFromYesterday}</span>
         </div>
 
         <div className="mt-5">
@@ -393,50 +377,47 @@ const PatientStats = () => {
         </div>
 
         <div className="mt-7 pt-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[1px] text-[#655B6B]">PATIENT FLOW</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[1px] text-[#655B6B]" role="status" aria-live="polite">{notice || "PATIENT FLOW"}</p>
           <p className="mt-1 text-[9px] uppercase tracking-[0.4px] text-[#A59CA9]">Compared to yesterday</p>
         </div>
       </div>
 
       <div className="rounded-bl-[20px] bg-white p-4">
-        <h2 className="text-[32px] font-medium leading-none tracking-[-1.5px] text-[#28172F]">{completedPatients}</h2>
+        <h2 title={`Completed consultations: ${countText(data?.consultationStats?.completedConsultations)}`} className="text-[32px] font-medium leading-none tracking-[-1.5px] text-[#28172F]">{completedPatients}</h2>
         <p className="mt-2 text-[9px] font-semibold uppercase tracking-[1px] text-[#756A7B]">Completed</p>
         <p className="mt-5 text-[10px] text-[#A59CA9]">Patients served</p>
       </div>
 
       <div className="rounded-br-[20px] bg-white p-4">
-        <h2 className="text-[32px] font-medium leading-none tracking-[-1.5px] text-[#28172F]">{String(remainingPatients).padStart(2, "0")}</h2>
-        <p className="mt-2 text-[9px] font-semibold uppercase tracking-[1px] text-[#756A7B]">Remaining</p>
-        <p className="mt-5 text-[10px] text-[#A59CA9]">In queue</p>
+        <h2 className="text-[32px] font-medium leading-none tracking-[-1.5px] text-[#28172F]">{typeof remainingPatients === "number" ? String(remainingPatients).padStart(2, "0") : unavailable}</h2>
+        <p className="mt-2 text-[9px] font-semibold uppercase tracking-[1px] text-[#756A7B]">Waiting</p>
+        <p className="mt-5 text-[10px] text-[#A59CA9]">Queue entries</p>
       </div>
     </div>
   );
 };
 
 
-const WeeklyPatientChart = () => {
-  const weeklyData = [
-    { day: "Thu", patients: 28 },
-    { day: "Fri", patients: 21 },
-    { day: "Sat", patients: 14 },
-    { day: "Sun", patients: 8 },
-    { day: "Mon", patients: 18 },
-    { day: "Tue", patients: 24 },
-    { day: "Wed", patients: 16 },
-    { day: "Thu", patients: 28 },
-    { day: "Fri", patients: 21 },
-    { day: "Sat", patients: 14 },
-    { day: "Sun", patients: 8 },
-  ];
-
-  const maxPatients = Math.max(...weeklyData.map((item) => item.patients));
+const WeeklyPatientChart = ({ data }) => {
+  const chartRef = useRef(null);
+  const trend = data?.trend10Days;
+  const ready = Array.isArray(trend) && trend.length === 10;
+  const weeklyData = ready ? trend.map(item => ({ ...item,
+    day: calendarDate(item.date)?.toLocaleDateString("en", { weekday: "short" }) || unavailable
+  })) : Array.from({ length: 10 }, () => ({ day: unavailable, patients: null }));
+  const maxPatients = Math.max(0, ...weeklyData.map(item => item.patients || 0));
+  const peak = maxPatients > 0 ? weeklyData.find(item => item.patients === maxPatients) : null;
+  const peakText = peak ? `${calendarDate(peak.date)?.toLocaleDateString("en", { weekday: "long" }) || unavailable} · ${peak.patients}` : unavailable;
 
   useEffect(() => {
-    gsap.fromTo(".weekly-chart-bar", { scaleY: 0, transformOrigin: "bottom" }, { scaleY: 1, duration: 0.8, ease: "power3.out", stagger: 0.1 });
-  }, []);
+    const context = gsap.context(() => {
+      gsap.fromTo(".weekly-chart-bar", { scaleY: 0, transformOrigin: "bottom" }, { scaleY: 1, duration: 0.8, ease: "power3.out", stagger: 0.1 });
+    }, chartRef);
+    return () => context.revert();
+  }, [trend]);
 
   return (
-    <div className="h-[335px] min-w-[550px] flex-1 rounded-[20px] bg-white px-6 pt-4.5 pb-1">
+    <div ref={chartRef} aria-label={ready && maxPatients === 0 ? "No patient activity in the last 10 days" : "Patient analytics for the last 10 days"} className="h-[335px] min-w-[550px] flex-1 rounded-[20px] bg-white px-6 pt-4.5 pb-1">
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -451,12 +432,12 @@ const WeeklyPatientChart = () => {
 
       <div className="mt-7 flex h-[170px] items-end justify-between gap-3 px-2">
         {weeklyData.map((item, index) => {
-          const height = (item.patients / maxPatients) * 100;
-          const isHighest = item.patients === maxPatients;
+          const height = maxPatients > 0 && Number.isFinite(item.patients) ? (item.patients / maxPatients) * 100 : 0;
+          const isHighest = maxPatients > 0 && item.patients === maxPatients;
 
           return (
             <div key={`${item.day}-${index}`} className="flex h-full flex-1 flex-col items-center justify-end">
-              <div className="mb-2 text-[8px] font-semibold text-[#A59CA9]">{item.patients}</div>
+              <div className="mb-2 text-[8px] font-semibold text-[#A59CA9]">{countText(item.patients)}</div>
 
               <div className="flex h-[130px] w-full items-end justify-center">
                 <div className={`weekly-chart-bar min-w-[35px] max-w-[42px] rounded-full ${isHighest ? "bg-[#CBBBD0]" : "bg-[#28172F]"}`} style={{ height: `${height}%` }}></div>
@@ -470,25 +451,34 @@ const WeeklyPatientChart = () => {
 
       <div className="mt-4 flex items-center justify-between">
         <div>
-          <p className="text-[8px] font-semibold uppercase tracking-[1px] text-[#A59CA9]">Total Patients</p>
-          <p className="mt-1 text-[18px] font-semibold tracking-[-0.5px] text-[#28172F]">{weeklyData.reduce((total, item) => total + item.patients, 0)}</p>
+          <p className="text-[8px] font-semibold uppercase tracking-[1px] text-[#A59CA9]">Daily patient total</p>
+          <p className="mt-1 text-[18px] font-semibold tracking-[-0.5px] text-[#28172F]">{ready ? weeklyData.reduce((total, item) => total + item.patients, 0) : unavailable}</p>
         </div>
 
         <div className="text-right">
           <p className="text-[8px] font-semibold uppercase tracking-[1px] text-[#A59CA9]">Peak Day</p>
-          <p className="mt-1 text-[11px] font-semibold text-[#28172F]">Thursday · 28</p>
+          <p className="mt-1 text-[11px] font-semibold text-[#28172F]">{peakText}</p>
         </div>
       </div>
     </div>
   );
 };
 
-const QueueOverview = () => {
-  const appointments = [
-    { time: "09:30 AM", name: "Rahul Sharma", condition: "Fever & Cold", token: "01", status: "Completed" },
-    { time: "10:00 AM", name: "Ananya Singh", condition: "Migraine", token: "02", status: "Completed" },
-    { time: "10:30 AM", name: "Vikash Kumar", condition: "Blood Pressure", token: "03", status: "Remaining" },
-  ];
+const QueueOverview = ({ data, selection, notice }) => {
+  const selected = selection !== null;
+  const source = selected ? data?.selectedDay?.appointments : data?.todayAppointments;
+  const queues = selected ? data?.selectedDay?.queueEntries : data?.dailyQueue?.queueEntries;
+  const queueByAppointment = new Map((queues || []).map(queue => [String(queue.appointmentId), queue]));
+  const appointments = (source || []).map(appointment => {
+    const queue = queueByAppointment.get(String(appointment._id));
+    return { id: appointment._id, name: appointment.userId?.name || "Patient unavailable",
+      condition: appointment.reason || "Reason unavailable", token: countText(queue?.queueNumber),
+      time: timeText(queue?.appointmentTime),
+      status: ({ scheduled: "Scheduled", completed: "Completed", cancelled: "Cancelled" })[appointment.status] || "Unavailable" };
+  });
+  const total = selected ? data?.selectedDay?.appointmentCount : data?.stats?.appointmentsToday;
+  const truncated = selected ? data?.selectedDay?.appointmentsTruncated : Number.isFinite(total) && total > appointments.length;
+  const heading = selected ? `Appointments · ${selection.date}` : "Today's appointments";
 
   return (
     <div className="mt-4 w-full py-[1px]">
@@ -499,15 +489,16 @@ const QueueOverview = () => {
               <span className="h-[9px] w-[9px] rounded-[2px] bg-[#CBBBD0]"></span>
               <span className="text-[9px] font-semibold tracking-[0.2px] text-[#28172F]">APPOINTMENTS</span>
             </div>
-            <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.6px] text-[#28172F]">Upcoming Today</h3>
+            <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.6px] text-[#28172F]">{heading}</h3>
           </div>
 
-          <span className="text-[9px] font-medium text-[#A59CA9]">4 appointments</span>
+          <span className="text-[9px] font-medium text-[#A59CA9]">{countText(total)} appointments{truncated ? ` · showing ${appointments.length}` : ""}</span>
         </div>
 
         <div className="mt-6">
+          {appointments.length === 0 && <p className="text-[9px] font-medium text-[#A59CA9]">{notice || (data ? "No appointments for this day" : "Appointments unavailable")}</p>}
           {appointments.map((appointment) => (
-            <div key={appointment.token} className="mb-3 flex w-full items-center gap-4 rounded-full border border-black/7 px-5 py-3">
+            <div key={appointment.id} className="mb-3 flex w-full items-center gap-4 rounded-full border border-black/7 px-5 py-3">
               <div className="w-[45px] min-w-[45px] text-center">
                 <p className="text-[22px] font-semibold text-[#28172F]">{appointment.token}</p>
               </div>
@@ -536,26 +527,16 @@ const QueueOverview = () => {
   );
 };
 
-const RightSideControls = () => {
-  const [darkMode, setDarkMode] = useState(false);
-
-  return (
-    <div className="flex items-center gap-3">
-      <button onClick={() => setDarkMode(!darkMode)} className="flex h-[42px] w-[76px] items-center justify-between rounded-full border border-[#E4E0E6] bg-white p-1.5 shadow-[0_2px_8px_rgba(40,23,47,0.04)] transition-all duration-300">
-        <span className={`flex h-[30px] w-[30px] items-center justify-center rounded-full text-[13px] transition-all duration-300 ${!darkMode ? "bg-[#28172F] text-white" : "text-[#A59CA9]"}`}>☀</span>
-        <span className={`flex h-[30px] w-[30px] items-center justify-center rounded-full text-[13px] transition-all duration-300 ${darkMode ? "bg-[#28172F] text-white" : "text-[#A59CA9]"}`}>☾</span>
-      </button>
-    </div>
-  );
-};
-
-const DoctorAvailability = () => {
-  const doctors = [
-    { name: "Dr. Aryan Sharma", specialty: "General Physician", status: "Available", initial: "A" },
-    { name: "Dr. Neha Kapoor", specialty: "Dermatologist", status: "With Patient", initial: "N" },
-    { name: "Dr. Rahul Verma", specialty: "Cardiologist", status: "Available", initial: "R" },
-    { name: "Dr. Priya Mehta", specialty: "Pediatrician", status: "On Break", initial: "P" },
-  ];
+const DoctorAvailability = ({ data, notice }) => {
+  const selectedId = data?.appliedFilters?.doctorId;
+  const doctors = (data?.doctors || []).filter(doctor => !selectedId || doctor._id === selectedId).map(doctor => {
+    const availability = data?.doctorAvailability?.find(item => item.doctorId === doctor._id);
+    const metrics = data?.doctorStats?.find(item => item.doctorId === doctor._id);
+    return { id: doctor._id, name: doctor.name || "Doctor unavailable", specialty: doctor.specialization || "Specialization unavailable",
+      initial: doctor.name?.charAt(0) || unavailable,
+      status: availability?.status === "consulting" ? "With Patient" : "Unknown",
+      detail: `Recorded snapshot; ${countText(metrics?.appointmentsToday)} appointments today; ${countText(metrics?.waitingPatients)} waiting queue entries; ${countText(metrics?.completedConsultations)} completed consultations` };
+  });
 
   return (
     <div className="w-[25%] min-w-[375px] max-w-[410px] rounded-[20px] bg-white border p-10">
@@ -568,12 +549,13 @@ const DoctorAvailability = () => {
           <h3 className="mt-2 text-[18px] font-semibold tracking-[-0.5px] text-[#28172F]">Doctor Availability</h3>
         </div>
 
-        <span className="rounded-full bg-[#E9DFEC] px-3 py-1.5 text-[8px] font-semibold uppercase tracking-[0.5px] text-[#28172F]">4 Active</span>
+        <span className="rounded-full bg-[#E9DFEC] px-3 py-1.5 text-[8px] font-semibold uppercase tracking-[0.5px] text-[#28172F]">{countText(data?.stats?.activeDoctors)} in scope</span>
       </div>
 
       <div className="mt-5">
+        {doctors.length === 0 && <p className="text-[9px] font-medium text-[#A59CA9]">{notice || (data ? "No active doctors" : "Doctors unavailable")}</p>}
         {doctors.map((doctor, index) => (
-          <div key={doctor.name} className={`flex items-center gap-3 py-3 ${index !== doctors.length - 1 ? "border-b border-[#F0EDF1]" : ""}`}>
+          <div key={doctor.id} title={doctor.detail} className={`flex items-center gap-3 py-3 ${index !== doctors.length - 1 ? "border-b border-[#F0EDF1]" : ""}`}>
             <div className="flex h-[38px] w-[38px] min-w-[38px] items-center justify-center rounded-full bg-[#E9DFEC] text-[10px] font-semibold text-[#28172F]">{doctor.initial}</div>
 
             <div className="min-w-0 flex-1">
@@ -597,20 +579,76 @@ const DoctorAvailability = () => {
 // =====================================================
 
 const ClinicAdminDashboard = () => {
+  const [selectedDoctor, setSelectedDoctor] = useState("");
+  const [selection, setSelection] = useState(null);
+  const [doctors, setDoctors] = useState([]);
+  const [result, setResult] = useState(null);
+  const pendingRequest = useRef(null);
+  const token = localStorage.getItem("clinicAccessToken") || "";
+  const params = new URLSearchParams();
+  if (selectedDoctor) params.set("doctorId", selectedDoctor);
+  if (selection) { params.set("month", selection.month); params.set("date", selection.date); }
+  const path = `/api/dashboard/clinic${params.size ? `?${params}` : ""}`;
+  const changeDoctor = doctorId => {
+    if (doctorId === selectedDoctor) return;
+    setResult(null);
+    setSelectedDoctor(doctorId);
+  };
+  const changeSelection = next => {
+    if (next.month === selection?.month && next.date === selection?.date) return;
+    setResult(null);
+    setSelection(next);
+  };
+
+  useEffect(() => {
+    let active = true;
+    if (!token) {
+      return () => { active = false; };
+    }
+    // Reuse the in-flight promise when development StrictMode replays this effect.
+    if (pendingRequest.current?.path !== path || pendingRequest.current?.token !== token) {
+      pendingRequest.current = { path, token, promise: request("get", path, null, token) };
+    }
+    pendingRequest.current.promise.then(data => {
+      if (!active) return;
+      if (data?.success !== true || data?.dashboard !== "clinic" ||
+          (data.appliedFilters?.doctorId || "") !== selectedDoctor) {
+        setResult({ path, token, error: "Dashboard response is unavailable for this selection." });
+        return;
+      }
+      setDoctors(data.doctors || []);
+      setResult({ path, token, data });
+    }).catch(error => {
+      if (!active) return;
+      const status = error.response?.status;
+      const message = ({ 401: "Your session has expired. Please sign in again.",
+        403: "Access denied for this clinic or doctor selection.", 404: "Clinic not found." })[status] ||
+        readApiError(error)?.message || "Unable to load the clinic dashboard.";
+      setResult({ path, token, error: message });
+    });
+    return () => { active = false; };
+  }, [path, token, selectedDoctor]);
+
+  const current = result?.path === path && result?.token === token ? result : null;
+  const data = current?.data || null;
+  const notice = !token ? "Sign in to view the clinic dashboard." : current?.error ||
+    (!current ? "Loading clinic dashboard…" : "");
+
   return (
     <div className="min-h-screen bg-white p-[15px]">
+      <DashboardDemoIndicator />
       <div className = "flex h-full min-w-full flex-row items-center gap-4">
         <div className = "flex h-full min-w-0 flex-1 flex-col items-stretch justify-between">
-            <DoctorSelector />
+            <DoctorSelector doctors={doctors} selectedDoctor={selectedDoctor} setSelectedDoctor={changeDoctor} />
             <div className = "flex w-full min-w-0 flex-row items-center gap-4">
-                <div className="shrink-0"><PatientStats /></div>
-                <WeeklyPatientChart />
+                <div className="shrink-0"><PatientStats data={data} notice={notice} /></div>
+                <WeeklyPatientChart data={data} />
             </div>
-            <QueueOverview />
+            <QueueOverview data={data} selection={selection} notice={notice} />
         </div>
         <div className = "flex w-[400px] min-w-[400px] shrink-0 flex-col items-center justify-between">
-            <ClinicCalendar />
-            <DoctorAvailability />
+            <ClinicCalendar data={data} selection={selection} onChange={changeSelection} />
+            <DoctorAvailability data={data} notice={notice} />
         </div>
       </div>
     </div>

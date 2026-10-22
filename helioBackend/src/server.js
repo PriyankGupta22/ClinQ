@@ -17,6 +17,8 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import Appointment from "./models/Appointment.model.js";
 
+import dashboardRoutes from "./routes/dashboard.routes.js";
+
 dotenv.config()
 
 const app = express();
@@ -160,6 +162,7 @@ app.use("/api/queue", queueRoutes)
 app.use("/api/prescription", prescriptionsRoutes)
 app.use("/api/doctor-auth", doctorAuthRoutes)
 app.use("/api/messages", messageRoutes)
+app.use("/api/dashboard", dashboardRoutes);
 
 app.get("/", (req, res) => {
     res.send("Healio Backend Running");
