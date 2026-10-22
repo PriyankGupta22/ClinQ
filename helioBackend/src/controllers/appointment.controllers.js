@@ -7,12 +7,16 @@ export const createAppointment = async (req, res, next) => {
     try {
         const userId = req.user.id;
         
-        const { clinicId, doctorId, reason, appointmentDate } = req.body;
+        const { clinicId, doctorId, reason, age, appointmentDate, isEmergency } = req.body;
 
-        if (!clinicId || !doctorId) {
+        if (!clinicId || !doctorId || !reason?.trim()) {
             return res.status(400).json({
-                message: "Clinic and doctor are required"
+                message: "Clinic, doctor and reason are required"
             });
+        }
+
+        if (age !== undefined && (!Number.isInteger(Number(age)) || Number(age) < 0 || Number(age) > 130)) {
+            return res.status(400).json({ message: "A valid age is required" });
         }
 
         const clinic = await Clinic.findById(clinicId);
@@ -47,6 +51,9 @@ export const createAppointment = async (req, res, next) => {
         if (Number.isNaN(requestedDate.getTime())) {
             return res.status(400).json({ message: "Valid appointment date is required" });
         }
+        if (requestedDate <= new Date()) {
+            return res.status(400).json({ message: "Appointment date must be in the future" });
+        }
 
         const existingAppointment = await Appointment.findOne({
             userId,
@@ -68,7 +75,9 @@ export const createAppointment = async (req, res, next) => {
             clinicId,
             appointmentDate: requestedDate,
             duration: clinic.appointmentDuration,
-            reason
+            reason: reason.trim(),
+            ...(age !== undefined ? { age: Number(age) } : {}),
+            isEmergency: isEmergency === true || req.body.priority === "emergency"
         });
 
         req.appointment = appointment

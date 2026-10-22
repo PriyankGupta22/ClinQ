@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { PageTitle } from "./ProfilePage";
+import { FiArrowLeft, FiCalendar, FiChevronRight, FiClock, FiRefreshCw } from "react-icons/fi";
+import FeverChartEditor from "./FeverChartEditor";
 
 export default function PatientPrescriptionsPage({ request }) {
   const [prescriptions, setPrescriptions] = useState([]);
@@ -30,71 +31,63 @@ export default function PatientPrescriptionsPage({ request }) {
   };
 
   return (
-    <PageTitle eyebrow="Patient space" title="My Prescriptions">
-      {error && <div className="rx-alert rx-alert-error">{error}</div>}
+    <div className="min-h-screen bg-[#F8F9F7] p-[15px]">
+      <div className="mb-4 flex min-h-[80px] flex-wrap items-center justify-between gap-4 rounded-[30px] bg-white px-6 py-4">
+        <div><p className="text-[9px] font-semibold uppercase tracking-[1px] text-[#8BA49F]">PATIENT SPACE</p><h1 className="mt-1 text-[22px] font-semibold tracking-[-.7px] text-[#17312E]">My prescriptions</h1><p className="mt-1 text-[10px] text-[#8BA49F]">Prescriptions issued by your doctors</p></div>
+        <button onClick={loadPrescriptions} className="flex h-11 items-center gap-2 rounded-full bg-[#17312E] px-5 text-[9px] font-semibold uppercase tracking-[.8px] text-white"><FiRefreshCw /> Refresh</button>
+      </div>
+      {error && <div className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div>}
 
       {selected ? (
         <PatientPrescriptionDetail
           rx={selected}
+          request={request}
           onBack={() => setSelected(null)}
         />
       ) : (
-        <>
-          <div style={{ marginBottom: 24 }}>
-            <p style={{ color: "var(--muted)", fontSize: 12, margin: 0 }}>
-              {prescriptions.length} prescription{prescriptions.length !== 1 ? "s" : ""} from your doctors
-            </p>
-          </div>
+        <div className="rounded-[20px] bg-white p-6">
+          <div className="mb-5 flex items-end justify-between"><div><p className="text-[9px] font-semibold tracking-[.4px] text-[#28504B]">MEDICAL RECORDS</p><h2 className="mt-2 text-[20px] font-semibold text-[#17312E]">Issued prescriptions</h2></div><span className="text-[9px] uppercase tracking-[.8px] text-[#8BA49F]">{prescriptions.length} Records</span></div>
 
-          {loading && <p className="empty" style={{ marginTop: 24 }}>Loading prescriptions…</p>}
+          {loading && <p className="py-16 text-center text-sm text-[#8BA49F]">Loading prescriptions...</p>}
 
           {!loading && prescriptions.length === 0 && (
-            <div className="rx-empty">
-              <span className="rx-empty-icon">📋</span>
-              <strong>No prescriptions yet</strong>
-              <p>Your doctor's prescriptions will appear here after your consultations.</p>
+            <div className="rounded-2xl bg-[#F5F9F8] py-16 text-center">
+              <p className="text-[16px] font-semibold text-[#17312E]">No prescriptions yet</p>
+              <p className="mt-2 text-[11px] text-[#8BA49F]">Your doctor’s prescriptions will appear here after your consultation.</p>
             </div>
           )}
 
           {!loading && prescriptions.length > 0 && (
-            <div className="appointment-list">
+            <div className="space-y-3">
               {prescriptions.map((rx) => (
-                <article key={rx._id}>
-                  <div>
-                    <strong>{rx.diagnosis || "Consultation"}</strong>
-                    <small>
-                      {rx.doctorId?.name ? `Dr. ${rx.doctorId.name}` : "Doctor"}{" "}
-                      {rx.doctorId?.specialization ? `· ${rx.doctorId.specialization}` : ""} ·{" "}
-                      {rx.createdAt ? new Date(rx.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"} ·{" "}
-                      {rx.medicines?.length || 0} medicine{rx.medicines?.length !== 1 ? "s" : ""}
-                    </small>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-                    {rx.followUpDate && (
-                      <span className="pill scheduled">
-                        Follow-up: {new Date(rx.followUpDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                      </span>
-                    )}
-                    <button className="small-button" onClick={() => openDetail(rx._id)}>
-                      View ↗
-                    </button>
-                  </div>
-                </article>
+                <button key={rx._id} onClick={() => openDetail(rx._id)} className="flex w-full items-center gap-4 rounded-[24px] bg-[#F5F9F8] p-4 text-left transition hover:bg-[#EAF3F1]">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#17312E] text-lg font-semibold text-white">{rx.doctorId?.name?.slice(0, 1).toUpperCase() || "D"}</div>
+                  <div className="min-w-0 flex-1"><p className="truncate text-[14px] font-semibold text-[#17312E]">{rx.diagnosis || "Consultation"}</p><p className="mt-1 truncate text-[10px] text-[#54756F]">{rx.doctorId?.name ? `Dr. ${rx.doctorId.name}` : "Doctor"} · {rx.clinicId?.clinicName || "Clinic"}</p><div className="mt-2 flex flex-wrap gap-3 text-[9px] text-[#8BA49F]"><span className="flex items-center gap-1"><FiCalendar /> {rx.createdAt ? new Date(rx.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—"}</span><span className="flex items-center gap-1"><FiClock /> {rx.medicines?.length || 0} medicines</span></div></div>
+                  <FiChevronRight className="shrink-0 text-[#739D96]" />
+                </button>
               ))}
             </div>
           )}
-        </>
+        </div>
       )}
-    </PageTitle>
+    </div>
   );
 }
 
-function PatientPrescriptionDetail({ rx, onBack }) {
+function PatientPrescriptionDetail({ rx, request, onBack }) {
+  const [savingChart, setSavingChart] = useState(false);
+  const [chartError, setChartError] = useState("");
+  const saveChart = async (feverChart) => {
+    setSavingChart(true);
+    setChartError("");
+    const data = await request("put", `/api/prescription/${rx._id}`, { feverChart });
+    if (data?.success) setChartError("Fever chart saved.");
+    else setChartError(data?.message || "Could not save fever chart.");
+    setSavingChart(false);
+  };
   return (
     <div>
-      <div style={{ marginBottom: 20 }}>
-        <button className="small-button" onClick={onBack}>← Back to prescriptions</button>
-      </div>
+      <button className="mb-4 flex items-center gap-2 rounded-full border border-[#DDE8E5] bg-white px-4 py-3 text-[9px] font-semibold uppercase tracking-[.7px] text-[#28504B]" onClick={onBack}><FiArrowLeft /> Back to prescriptions</button>
 
       <div className="rx-detail-card">
         <div className="rx-detail-band">
@@ -175,6 +168,11 @@ function PatientPrescriptionDetail({ rx, onBack }) {
             <p style={{ margin: 0, fontSize: 12, color: "var(--muted)", lineHeight: 1.6 }}>{rx.notes}</p>
           </RxSection>
         )}
+
+        <RxSection title="Temperature tracking">
+          {chartError && <p className="mb-3 text-xs text-[#526785]">{chartError}</p>}
+          <FeverChartEditor value={rx.feverChart || {}} onSave={saveChart} saving={savingChart} />
+        </RxSection>
       </div>
     </div>
   );
@@ -197,4 +195,3 @@ function RxMeta({ label, value }) {
     </div>
   );
 }
-

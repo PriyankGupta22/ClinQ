@@ -1,16 +1,10 @@
 import React, { useState, useEffect } from "react";
 import gsap from "gsap";
+import { useDoctorClinic } from "./DoctorClinicContext";
 
 const ClinicSelector = () => {
   const [open, setOpen] = useState(false);
-
-  const clinics = [
-    "City Care Clinic",
-    "MedPlus Clinic",
-    "HealthPoint Clinic",
-  ];
-
-  const [selectedClinic, setSelectedClinic] = useState("General");
+  const { clinics, selectedClinic, selectedClinicId, selectClinic, loading, error } = useDoctorClinic();
 
   return (
     <div className="relative">
@@ -41,7 +35,7 @@ const ClinicSelector = () => {
           </p>
 
           <p className="mt-[3px] text-[12px] font-semibold text-[#F0F2F6]">
-            {selectedClinic}
+            {loading ? "Loading clinics..." : selectedClinic?.name || "No clinic assigned"}
           </p>
         </div>
 
@@ -96,38 +90,12 @@ const ClinicSelector = () => {
             shadow-[0_15px_40px_rgba(15,25,50,0.18)]
           "
         >
-          {/* General */}
-          <button
-            onClick={() => {
-              setSelectedClinic("General");
-              setOpen(false);
-            }}
-            className={`
-              w-full
-              rounded-[12px]
-              px-4
-              py-3
-              text-left
-              text-[12px]
-              font-medium
-              transition-all
-              duration-200
-              ${
-                selectedClinic === "General"
-                  ? "bg-[#263354] text-white"
-                  : "text-[#9AA6BC] hover:bg-[#202C4B] hover:text-[#E5E9F1]"
-              }
-            `}
-          >
-            General
-          </button>
-
           {/* Clinics */}
           {clinics.map((clinic) => (
             <button
-              key={clinic}
+              key={clinic.id}
               onClick={() => {
-                setSelectedClinic(clinic);
+                selectClinic(clinic.id);
                 setOpen(false);
               }}
               className={`
@@ -141,15 +109,18 @@ const ClinicSelector = () => {
                 transition-all
                 duration-200
                 ${
-                  selectedClinic === clinic
+                  selectedClinicId === clinic.id
                     ? "bg-[#263354] text-white"
                     : "text-[#9AA6BC] hover:bg-[#202C4B] hover:text-[#E5E9F1]"
                 }
               `}
             >
-              {clinic}
+              {clinic.name}
             </button>
           ))}
+          {!loading && clinics.length === 0 && (
+            <p className="px-4 py-3 text-[12px] text-[#9AA6BC]">{error || "No clinics assigned"}</p>
+          )}
         </div>
       )}
     </div>
@@ -874,8 +845,6 @@ const DoctorDashboard = () => {
       <header className="h-[80px]">
         <SchedulePanel />
         <div className="flex h-full items-center">
-          {/* <ClinicSelector /> */}
-          
           <div className = "min-w-[815px] flex items-center items-center justify-between absolute top-[10px]">
             <ClinicSelector />
             <RightSideControls />

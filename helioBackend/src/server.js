@@ -15,6 +15,7 @@ import DoctorClinic from "./models/DoctorClinic.model.js";
 import { conversationRoom, createClinicPatientMessage, createMessage, createPatientClinicMessage, patientConversationRoom } from "./controllers/message.controllers.js";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import Appointment from "./models/Appointment.model.js";
 
 dotenv.config()
 
@@ -56,12 +57,24 @@ io.on("connection", (socket) => {
     console.log("Client connected:", socket.id);
     if (socket.user) socket.join(`messages:user:${socket.user.role}:${socket.user.id}`);
 
-    socket.on("joinQueue", ({ clinicId, doctorId, date }) => {
-        const room = `queue:${clinicId}:${doctorId}:${date}`;
-
-        socket.join(room);
-
-        console.log(`Socket ${socket.id} joined room: ${room}`);
+    socket.on("joinQueue", async ({ clinicId, doctorId, date }, done = () => {}) => {
+        try {
+            if (!socket.user) throw new Error("Authentication required");
+            const day = new Date(`${date}T00:00:00`);
+            if (Number.isNaN(day.getTime())) throw new Error("Invalid queue date");
+            const roomDate = [day.getFullYear(), String(day.getMonth() + 1).padStart(2, "0"), String(day.getDate()).padStart(2, "0")].join("-");
+            const allowed = socket.user.role === "doctor"
+                ? await DoctorClinic.exists({ doctorId: socket.user.id, clinicId })
+                : socket.user.role === "clinicAdmin"
+                    ? String(socket.user.id) === String(clinicId)
+                    : await Appointment.exists({ userId: socket.user.id, clinicId, doctorId, appointmentDate: { $gte: day, $lt: new Date(day.getTime() + 86400000) } });
+            if (!allowed) throw new Error("Queue access is not available");
+            const room = `queue:${clinicId}:${doctorId}:${roomDate}`;
+            socket.join(room);
+            done({ ok: true });
+        } catch (error) {
+            done({ ok: false, message: error.message });
+        }
     });
 
     socket.on("joinConversation", async ({ counterpartId }, done = () => {}) => {

@@ -41,6 +41,11 @@ const menuItems = [
   },
   {
     number: "07",
+    name: "Store queue",
+    path: "/clinic/store",
+  },
+  {
+    number: "08",
     name: "Profile",
     path: "/clinic/profile",
   },

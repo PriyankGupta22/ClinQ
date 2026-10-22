@@ -31,11 +31,16 @@ const menuItems = [
   },
   {
     number: "05",
+    name: "Live Queue",
+    path: "/patient/queue",
+  },
+  {
+    number: "06",
     name: "Prescriptions",
     path: "/patient/prescriptions",
   },
   {
-    number: "06",
+    number: "07",
     name: "Profile",
     path: "/patient/profile",
   },
@@ -50,6 +55,9 @@ const PatientSidebar = ({ collapsed, setCollapsed }) => {
 
   const [hoveredItem, setHoveredItem] = useState(null);
   const [time, setTime] = useState(new Date());
+  const [bookingContext, setBookingContext] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("patientBookingContext")); } catch { return null; }
+  });
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -70,6 +78,14 @@ const PatientSidebar = ({ collapsed, setCollapsed }) => {
 
     return () => clearInterval(timer);
 
+  }, []);
+
+  useEffect(() => {
+    const refreshBookingContext = () => {
+      try { setBookingContext(JSON.parse(localStorage.getItem("patientBookingContext"))); } catch { setBookingContext(null); }
+    };
+    window.addEventListener("patient-booking-context", refreshBookingContext);
+    return () => window.removeEventListener("patient-booking-context", refreshBookingContext);
   }, []);
 
 
@@ -366,6 +382,13 @@ const PatientSidebar = ({ collapsed, setCollapsed }) => {
       ================================================= */}
 
       <nav className="mt-10">
+        {!collapsed && bookingContext?.doctor?.doctorId && (
+          <div className="mb-5 rounded-[16px] border border-[#35645E] bg-[#1E413D] p-3">
+            <p className="text-[8px] font-semibold uppercase tracking-[1px] text-[#8CB6AE]">Selected doctor</p>
+            <p className="mt-2 truncate text-[12px] font-semibold text-[#EAF5F2]">Dr. {bookingContext.doctor.doctorId.name}</p>
+            <p className="mt-1 truncate text-[9px] text-[#9FC0B9]">{bookingContext.clinicName}</p>
+          </div>
+        )}
 
 
         {/* MENU LABEL */}

@@ -5,6 +5,9 @@ import {
     getPrescriptionById,
     getPatientPrescriptions,
     getDoctorPrescriptions,
+    getMyDoctorAppointments,
+    getClinicStorePrescriptions,
+    updateClinicStorePrescriptionStatus,
     updatePrescription,
     deletePrescription,
 } from "../controllers/prescription.controllers.js";
@@ -20,6 +23,13 @@ router.post(
     authMiddleWare,
     createPrescription
 );
+
+// Appointment picker used when the doctor creates a prescription.
+router.get("/doctor/appointments", authMiddleWare, getMyDoctorAppointments);
+
+// Clinic-admin accounts represent the clinic's store/pharmacy queue.
+router.get("/store/queue", authMiddleWare, getClinicStorePrescriptions);
+router.patch("/store/:prescriptionId/status", authMiddleWare, updateClinicStorePrescriptionStatus);
 
 
 // Get a single prescription

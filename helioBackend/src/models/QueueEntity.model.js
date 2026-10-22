@@ -42,6 +42,12 @@ const queueEntrySchema = new mongoose.Schema(
       default: "normal",
     },
 
+    // FIFO tie-breaker for emergency entries. It is set when an appointment
+    // enters or is promoted into the emergency queue.
+    priorityChangedAt: {
+      type: Date,
+    },
+
     appointmentTime: {
       type: Date,
       required: true,
@@ -49,7 +55,7 @@ const queueEntrySchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["waiting", "consulting", "completed", "no_show", "skipped"],
+      enum: ["waiting", "consulting", "completed", "cancelled", "no_show", "skipped"],
       default: "waiting",
     },
 
@@ -58,7 +64,12 @@ const queueEntrySchema = new mongoose.Schema(
     },
 
     estimatedEndTime: {
+      type: Date,
+    },
+
+    estimatedWaitingTime: {
       type: Number,
+      default: 0,
     },
 
     travelTime: {
@@ -85,6 +96,11 @@ const queueEntrySchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// One appointment can only have one queue entry, even if a booking request is
+// retried by the client.
+queueEntrySchema.index({ appointmentId: 1 }, { unique: true });
+queueEntrySchema.index({ clinicId: 1, doctorId: 1, date: 1, queueNumber: 1 });
 
 const QueueEntry = mongoose.model("QueueEntry", queueEntrySchema);
 

@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { FiSearch, FiX, FiPlus, FiMinus, FiChevronRight } from "react-icons/fi";
+import { useNavigate } from "react-router-dom";
 import capsule from "../../assets/capsule.png"
 import tablet from "../../assets/tablet.png"
 import injection from "../../assets/injection.png"
 import syrup from "../../assets/syrup.png"
 import tube from "../../assets/tube.png"
+import { useDoctorClinic, withDoctorClinic } from "./DoctorClinicContext";
 
 const cssCapsule = "absolute top-[14px] h-[74px] w-[104px] object-contain transition duration-300 scale-150"
 const capsuleGlow = "absolute inset-0 bg-gradient-to-br from-blue-100/60 via-transparent to-purple-100/50 rounded-full blur-xl"
@@ -14,7 +16,7 @@ const cssSyrup = "absolute top-[15px] h-[74px] w-[104px] object-contain transiti
 const cssTube = "absolute top-[50px] h-[74px] w-[104px] object-contain transition duration-300 scale-245 rotate-180"
 
 
-const CreatePrescriptionDetails = () => {
+const CreatePrescriptionDetails = ({ medicines, onCreate, saving, error, success }) => {
   const [foodEnabled, setFoodEnabled] = React.useState(false);
   const [feverEnabled, setFeverEnabled] = React.useState(false);
 
@@ -32,7 +34,6 @@ const CreatePrescriptionDetails = () => {
   const [weekOffset, setWeekOffset] = React.useState(0);
   const [temperature, setTemperature] = React.useState({});
 
-  const [created, setCreated] = React.useState(false);
 
   const foodOptions = [
     "Light meals",
@@ -176,8 +177,8 @@ const CreatePrescriptionDetails = () => {
     return "border-[#EFC8C8] bg-[#FFF2F2] text-[#D95353]";
   };
 
-  const handleCreatePrescription = () => {
-    const prescription = {
+  const handleCreatePrescription = async () => {
+    await onCreate({
       foodEnabled,
       foods: foodEnabled ? selectedFoods : [],
       feverEnabled,
@@ -187,15 +188,8 @@ const CreatePrescriptionDetails = () => {
       ),
       diagnosis,
       tests: selectedTests,
-    };
-
-    console.log("Prescription:", prescription);
-
-    setCreated(true);
-
-    setTimeout(() => {
-      setCreated(false);
-    }, 2500);
+      medicines,
+    });
   };
 
   return (
@@ -793,18 +787,21 @@ const CreatePrescriptionDetails = () => {
       {/* CREATE PRESCRIPTION */}
       <div className="flex items-center justify-end p-4">
 
-        {created && (
+        {success && (
           <p className="mr-4 text-[10px] font-medium text-[#4C9B62]">
-            Prescription created successfully
+            {success}
           </p>
         )}
+
+        {error && <p className="mr-4 text-[10px] font-medium text-[#D95353]">{error}</p>}
 
         <button
           type="button"
           onClick={handleCreatePrescription}
+          disabled={saving}
           className="relative overflow-hidden rounded-full bg-[#17213F] px-7 py-3.5 text-[11px] font-medium text-white transition-all duration-300 hover:bg-[#203A70] hover:shadow-[0_8px_20px_rgba(23,33,63,0.14)] active:scale-[0.98]"
         >
-          Create Prescription
+          {saving ? "Saving…" : "Create Prescription"}
         </button>
 
       </div>
@@ -833,10 +830,30 @@ const DEFAULT_DETAILS = {
   image: capsule
 };
 
-function Prescriptions() {
+function Prescriptions({ request, consultation }) {
+  const navigate = useNavigate();
   const [addedMedicines, setAddedMedicines] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [query, setQuery] = useState("");
+  const [appointments, setAppointments] = useState([]);
+  const [appointmentId, setAppointmentId] = useState(consultation?.appointmentId?._id || consultation?.appointmentId || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const { selectedClinicId } = useDoctorClinic();
+
+  const loadAppointments = useCallback(async () => {
+    const data = await request("get", withDoctorClinic("/api/prescription/doctor/appointments", selectedClinicId));
+    if (data?.success) setAppointments(data.appointments || []);
+    else setError(data?.message || "Unable to load patients for prescription.");
+  }, [request, selectedClinicId]);
+
+  useEffect(() => { loadAppointments(); }, [loadAppointments]);
+
+  useEffect(() => {
+    const id = consultation?.appointmentId?._id || consultation?.appointmentId;
+    if (id) setAppointmentId(id);
+  }, [consultation]);
 
   const filteredMedicines = useMemo(() => {
     const value = query.trim().toLowerCase();
@@ -873,12 +890,63 @@ function Prescriptions() {
     if (selectedId === id) setSelectedId(null);
   };
 
+  const createPrescription = async (details) => {
+    const appointment = appointments.find((item) => item._id === appointmentId) || consultation;
+    const doctorId = appointment?.doctorId?._id || appointment?.doctorId;
+    const userId = appointment?.userId?._id || appointment?.userId;
+    const clinicId = appointment?.clinicId?._id || appointment?.clinicId;
+
+    if (!appointmentId || !doctorId || !userId || !clinicId) {
+      setError("Select the patient appointment before creating the prescription.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
+    const medicines = details.medicines.map((medicine) => ({
+      name: medicine.name,
+      dosage: `${medicine.details.dose} ${medicine.details.unit}`,
+      frequency: `${medicine.details.frequency} · ${medicine.details.time}`,
+      duration: `${medicine.details.duration} days`,
+      instructions: medicine.details.food,
+    }));
+    const data = await request("post", "/api/prescription", {
+      appointmentId, doctorId, userId, clinicId,
+      diagnosis: details.diagnosis,
+      medicines,
+      tests: details.tests,
+      advice: details.foods.length ? `Diet advice: ${details.foods.join(", ")}` : "",
+      notes: details.doctorNotes.join("\n"),
+      feverChart: details.feverChart,
+    });
+
+    if (data?.success) {
+      setSuccess("Prescription saved and sent to the clinic store.");
+      setAppointments((items) => items.filter((item) => item._id !== appointmentId));
+      setAppointmentId("");
+      setAddedMedicines([]);
+      setSelectedId(null);
+      window.setTimeout(() => navigate("/doctor/prescriptions"), 900);
+    } else {
+      setError(data?.message || "Could not save the prescription.");
+    }
+    setSaving(false);
+  };
+
   const quantity = selectedMedicine
     ? selectedMedicine.details.dose * getDailyFrequency(selectedMedicine.details.frequency) * selectedMedicine.details.duration
     : 0;
 
   return (
     <div className="min-h-screen bg-white text-[#172B55]">
+      <div className="mx-6 mt-6 rounded-[20px] border border-[#E5EBF2] bg-[#FAFBFD] px-5 py-4 md:mx-10">
+        <label className="block text-[10px] font-semibold uppercase tracking-[.14em] text-[#71829D]">Patient appointment</label>
+        <select value={appointmentId} onChange={(event) => { setAppointmentId(event.target.value); setError(""); setSuccess(""); }} className="mt-2 h-11 w-full max-w-xl rounded-xl border border-[#E1E7EF] bg-white px-3 text-[12px] text-[#172B55] outline-none">
+          <option value="">Select patient and appointment</option>
+          {appointments.map((appointment) => <option key={appointment._id} value={appointment._id}>{appointment.userId?.name || "Patient"} · {appointment.clinicId?.clinicName || "Clinic"} · {appointment.appointmentDate ? new Date(appointment.appointmentDate).toLocaleDateString("en-IN") : ""}</option>)}
+        </select>
+      </div>
       <div className="flex min-h-screen">
 
         <main className="min-w-0 flex-1">
@@ -1049,7 +1117,7 @@ function Prescriptions() {
           </div>
         </main>
       </div>
-      <CreatePrescriptionDetails />
+      <CreatePrescriptionDetails medicines={addedMedicines} onCreate={createPrescription} saving={saving} error={error} success={success} />
     </div>
   );
 }

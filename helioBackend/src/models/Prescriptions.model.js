@@ -97,6 +97,26 @@ const prescriptionSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+
+    feverChart: {
+      type: Map,
+      of: Number,
+      default: {},
+    },
+
+    // A prescription is made available to the clinic's medicine store as soon
+    // as the doctor issues it.  Keeping this state on the prescription makes
+    // the same record the source of truth for doctor, patient and store views.
+    storeStatus: {
+      type: String,
+      enum: ["pending", "dispensed", "unavailable"],
+      default: "pending",
+    },
+
+    sentToStoreAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
   {
     timestamps: true,

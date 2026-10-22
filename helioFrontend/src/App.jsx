@@ -10,7 +10,6 @@ import QueuePage from './components/QueuePage'
 import ClinicAdminPage from './components/ClinicAdminPage'
 import ClinicDiscovery from './components/ClinicDiscovery'
 import ProtectedRoute from './components/ProtectedRoute'
-import PrescriptionPage from './components/PrescriptionPage'
 import PatientPrescriptionsPage from './components/PatientPrescriptionsPage'
 import { readApiError, request, setApiBase } from './api/client'
 import LandingPage from './components/landingPageComponents/LandingPage'
@@ -21,20 +20,22 @@ import DoctorDashboard from './components/doctorFrontend/DoctorDashboard'
 import DoctorLayout from './components/doctorFrontend/DoctorLayout'
 import DoctorClinics from './components/doctorFrontend/DoctorClinics'
 import DoctorQueue from './components/doctorFrontend/DoctorQueue'
+import DoctorPrescriptionList from './components/doctorFrontend/DoctorPrescriptionList'
 import DoctorMessages from './components/doctorFrontend/DoctorMessages'
 import DoctorProfile from './components/doctorFrontend/DoctorProfile'
+import Prescriptions from './components/doctorFrontend/Prescriptions'
 import ClinicAdminLayout from './components/clinicAdminFrontend/ClinicAdminLayout'
 import ClinicAdminDashboard from './components/clinicAdminFrontend/ClinicAdminDashboard'
 import ClinicAdminMessages from './components/clinicAdminFrontend/ClinicAdminMessages'
-import Prescriptions from './components/doctorFrontend/Prescriptions'
 import PatientLayout from './components/patientFrontend/PatientLayout'
 import PatientDashboard from './components/patientFrontend/PatientDashboard'
 import PatientClinics from './components/patientFrontend/PatientClinics'
 import PatientAppointments from './components/patientFrontend/PatientAppointments'
-import PatientPrescriptions from './components/patientFrontend/PatientPrescriptions'
 import PatientProfile from './components/patientFrontend/PatientProfile'
+import PatientClinicDoctors from './components/patientFrontend/PatientClinicDoctors'
 import ClinicAdminDoctors from './components/clinicAdminFrontend/ClinicAdminDoctors'
 import ClinicAdminPatients from './components/clinicAdminFrontend/ClinicAdminPatients'
+import StoreQueue from './components/clinicAdminFrontend/StoreQueue'
 
 export default function App() {
   return <BrowserRouter><HealioRoutes /></BrowserRouter>
@@ -96,7 +97,7 @@ function HealioRoutes() {
     <Route path="/profile" element={shell(<ProfilePage identity={identity} {...pageProps} />)} />
     <Route path="/clinic-admin" element={<Navigate to="/clinic/dashboard" replace />} />
     <Route path="/clinic-admin/doctors" element={<Navigate to="/clinic/doctors" replace />} />
-    <Route path="/prescriptions" element={<ProtectedRoute token={token} requiredRole="doctor"><Layout page={location.pathname.slice(1)} setPage={go} identity={identity} setIdentity={chooseIdentity} logout={logout}><PrescriptionPage {...pageProps} isDoctor={identity === 'doctor'} consultation={location.state?.consultation} /></Layout></ProtectedRoute>} />
+    <Route path="/prescriptions" element={<ProtectedRoute token={token} requiredRole="doctor"><Layout page={location.pathname.slice(1)} setPage={go} identity={identity} setIdentity={chooseIdentity} logout={logout}><Prescriptions {...pageProps} consultation={location.state?.consultation} /></Layout></ProtectedRoute>} />
     <Route path="/doctor-dashboard" element={<Navigate to="/doctor/dashboard" replace />} />
     <Route path="/my-prescriptions" element={shell(<PatientPrescriptionsPage {...pageProps} />)} />
     <Route path="/landingPage" element={<LandingPage />} />
@@ -106,24 +107,28 @@ function HealioRoutes() {
     <Route path="/patient" element={<ProtectedRoute token={patientToken} requiredRole="patient"><PatientLayout /></ProtectedRoute>}>
       <Route path="dashboard" element={<PatientDashboard />} />
       <Route path="clinics" element={<PatientClinics />} />
+      <Route path="clinic-doctors" element={<PatientClinicDoctors />} />
       <Route path="messages" element={<PatientClinics />} />
       <Route path="appointments" element={<PatientAppointments />} />
-      <Route path="prescriptions" element={<PatientPrescriptions />} />
+      <Route path="queue" element={<QueuePage {...pageProps} currentUserId={getTokenSubject(patientToken)} isAdmin={false} isDoctor={false} />} />
+      <Route path="prescriptions" element={<PatientPrescriptionsPage {...pageProps} />} />
       <Route path="profile" element={<PatientProfile />} />
     </Route>
     <Route path="/doctor" element={<ProtectedRoute token={doctorToken} requiredRole="doctor"><DoctorLayout /></ProtectedRoute>}>
       <Route path="dashboard" element={<DoctorDashboard />} />
       <Route path="clinics" element={<DoctorClinics />} />
-      <Route path="queues" element={<DoctorQueue />} />
+      <Route path="queues" element={<DoctorQueue {...pageProps} />} />
       <Route path="messages" element={<DoctorMessages />} />
       <Route path="profile" element={<DoctorProfile />} />
-      <Route path="prescription" element={<Prescriptions />} />
+      <Route path="prescription" element={<Prescriptions {...pageProps} consultation={location.state?.consultation} />} />
+      <Route path="prescriptions" element={<DoctorPrescriptionList {...pageProps} />} />
     </Route>
     <Route path="/clinic" element={<ClinicAdminLayout onSignOut={logout} />}>
       <Route index element={<Navigate to="dashboard" replace />} />
       <Route path="dashboard" element={<ClinicAdminDashboard />} />
       <Route path="doctors" element={<ClinicAdminDoctors />} />
       <Route path="patients" element={<ClinicAdminPatients />} />
+      <Route path="store" element={<StoreQueue {...pageProps} />} />
       <Route path="messages" element={<ClinicAdminMessages />} />
     </Route>
     <Route path="*" element={<Navigate to={getFallbackPath(token, identity)} replace />} />

@@ -36,6 +36,10 @@ const queueSchema = new mongoose.Schema(
   }
 );
 
+// Queue creation uses an upsert; this index guarantees concurrent bookings
+// cannot create two queues for the same clinic, doctor and day.
+queueSchema.index({ clinicId: 1, doctorId: 1, date: 1 }, { unique: true });
+
 const Queue = mongoose.model("Queue", queueSchema);
 
 export default Queue;

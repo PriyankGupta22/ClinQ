@@ -58,7 +58,7 @@ export default function PatientClinics() {
     return `${clinic.clinicName || ""} ${clinic.description || ""} ${address.city || ""}`.toLowerCase().includes(search.toLowerCase());
   }), [clinics, search]);
 
-  const bookVisit = (clinic) => navigate("/patient/appointments", { state: { clinicId: clinic._id, clinicName: clinic.clinicName } });
+  const bookVisit = (clinic) => navigate("/patient/clinic-doctors", { state: { clinicId: clinic._id, clinicName: clinic.clinicName } });
   const sendMessage = () => {
     if (!message.trim() || !selectedClinic) return;
     const content = message.trim();

@@ -1,16 +1,28 @@
 import React, { useState, useEffect } from "react";
 import gsap from "gsap";
+import { request } from "../../api/client";
 
 const ClinicSelector = () => {
   const [open, setOpen] = useState(false);
+  const [clinics, setClinics] = useState([]);
+  const [selectedClinicId, setSelectedClinicId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const clinics = [
-    "City Care Clinic",
-    "MedPlus Clinic",
-    "HealthPoint Clinic",
-  ];
+  useEffect(() => {
+    request("get", "/api/clinic/public")
+      .then((result) => {
+        const availableClinics = result?.clinics || [];
+        setClinics(availableClinics);
+        setSelectedClinicId(availableClinics[0]?._id || "");
+      })
+      .catch((requestError) => {
+        setError(requestError.response?.data?.message || requestError.message || "Could not load clinics");
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
-  const [selectedClinic, setSelectedClinic] = useState("General");
+  const selectedClinic = clinics.find((clinic) => clinic._id === selectedClinicId);
 
   return (
     <div className="relative">
@@ -41,7 +53,7 @@ const ClinicSelector = () => {
           </p>
 
           <p className="mt-[3px] text-[12px] font-semibold text-[#F0F2F6]">
-            {selectedClinic}
+            {loading ? "Loading clinics..." : selectedClinic?.clinicName || "No clinics available"}
           </p>
         </div>
 
@@ -96,38 +108,12 @@ const ClinicSelector = () => {
             shadow-[0_15px_40px_rgba(15,25,50,0.18)]
           "
         >
-          {/* General */}
-          <button
-            onClick={() => {
-              setSelectedClinic("General");
-              setOpen(false);
-            }}
-            className={`
-              w-full
-              rounded-[12px]
-              px-4
-              py-3
-              text-left
-              text-[12px]
-              font-medium
-              transition-all
-              duration-200
-              ${
-                selectedClinic === "General"
-                  ? "bg-[#244D49] text-white"
-                  : "text-[#9AA6BC] hover:bg-[#1E413D] hover:text-[#E5E9F1]"
-              }
-            `}
-          >
-            General
-          </button>
-
           {/* Clinics */}
           {clinics.map((clinic) => (
             <button
-              key={clinic}
+              key={clinic._id}
               onClick={() => {
-                setSelectedClinic(clinic);
+                setSelectedClinicId(clinic._id);
                 setOpen(false);
               }}
               className={`
@@ -141,15 +127,18 @@ const ClinicSelector = () => {
                 transition-all
                 duration-200
                 ${
-                  selectedClinic === clinic
+                  selectedClinicId === clinic._id
                     ? "bg-[#244D49] text-white"
                     : "text-[#9AA6BC] hover:bg-[#1E413D] hover:text-[#E5E9F1]"
                 }
               `}
             >
-              {clinic}
+              {clinic.clinicName}
             </button>
           ))}
+          {!loading && clinics.length === 0 && (
+            <p className="px-4 py-3 text-[12px] text-[#9AA6BC]">{error || "No clinics available"}</p>
+          )}
         </div>
       )}
     </div>

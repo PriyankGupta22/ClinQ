@@ -32,6 +32,11 @@ const menuItems = [
   },
   {
     number: "05",
+    name: "Prescriptions",
+    path: "/doctor/prescriptions",
+  },
+  {
+    number: "06",
     name: "Profile",
     path: "/doctor/profile",
   },

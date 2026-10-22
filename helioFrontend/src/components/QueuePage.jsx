@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import socket from "../socket";
+import socket, { authenticateSocket } from "../socket";
 import { PageTitle, Response } from "./ProfilePage";
 
 export default function QueuePage({
@@ -19,6 +19,7 @@ export default function QueuePage({
   const [data, setData] = useState(null);
   const [clinics, setClinics] = useState([]);
   const [doctors, setDoctors] = useState([]);
+  const token = localStorage.getItem(isDoctor ? "doctorAccessToken" : isAdmin ? "clinicAccessToken" : "patientAccessToken");
 
   const change = (event) =>
     setForm({ ...form, [event.target.name]: event.target.value });
@@ -59,8 +60,15 @@ export default function QueuePage({
   }, [clinicId, doctorId, date, request]);
 
   useEffect(() => {
+    if (token) authenticateSocket(token);
     if (clinicId && doctorId)
       socket.emit("joinQueue", { clinicId, doctorId, date });
+    const refresh = () => {
+      if (!clinicId || !doctorId) return;
+      request("get", `/api/queue/getQueue/${clinicId}/${doctorId}/${encodeURIComponent(date)}`).then((result) => {
+        if (result?.queue) setData(result.queue);
+      });
+    };
     const update = (event) => {
       if (event.queue) return setData(event.queue);
       if (!event.queueEntry) return;
@@ -78,10 +86,12 @@ export default function QueuePage({
       );
     };
     socket.on("queueUpdated", update);
+    socket.on("connect", refresh);
     return () => {
       socket.off("queueUpdated", update);
+      socket.off("connect", refresh);
     };
-  }, [clinicId, doctorId, date]);
+  }, [clinicId, doctorId, date, request, token]);
   const updateEntry = async (entryId, action) => {
     await request("patch", `/api/queue/queue/${entryId}/${action}`);
   };

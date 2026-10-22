@@ -42,7 +42,7 @@ export default function PrescriptionPage({ request, consultation, isDoctor }) {
   }, [request]);
 
   const loadAppointments = useCallback(async () => {
-    const data = await request("get", isDoctor ? "/api/doctor-auth/appointments" : "/api/clinic/appointments");
+    const data = await request("get", "/api/prescription/doctor/appointments");
     if (data?.appointments) setAppointments(data.appointments);
   }, [request, isDoctor]);
 
@@ -91,7 +91,7 @@ export default function PrescriptionPage({ request, consultation, isDoctor }) {
   };
   const removeTest = (t) => setForm((f) => ({ ...f, tests: f.tests.filter((x) => x !== t) }));
 
-  const resetForm = () => { setForm({ ...emptyForm, medicines: [{ ...emptyMedicine }] }); setSymptomInput(""); setTestInput(""); setError(""); setSuccess(""); };
+  const resetForm = () => { setForm({ ...emptyForm, medicines: [{ ...emptyMedicine }] }); setSymptomInput(""); setTestInput(""); setError(""); };
 
   const create = async (e) => {
     e.preventDefault();
@@ -102,7 +102,7 @@ export default function PrescriptionPage({ request, consultation, isDoctor }) {
     const payload = { ...form, medicines: form.medicines.filter((m) => m.name.trim()) };
     const data = await request("post", "/api/prescription", payload);
     if (data?.success) {
-      setSuccess("Prescription created successfully!");
+      setSuccess("Prescription saved and sent to the clinic store.");
       resetForm();
       await loadPrescriptions();
       setTimeout(() => { setSuccess(""); setView(VIEW.LIST); }, 1200);

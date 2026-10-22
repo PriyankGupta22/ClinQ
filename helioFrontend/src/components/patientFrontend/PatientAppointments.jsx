@@ -1,62 +1,48 @@
-import { useState } from "react";
-import { FiChevronDown, FiClock, FiArrowUpRight } from "react-icons/fi";
+import { useEffect, useState } from "react";
+import { FiChevronDown, FiClock } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
+import { request } from "../../api/client";
 
 const PatientAppointments = () => {
   const navigate = useNavigate();
+  const token = localStorage.getItem("patientAccessToken");
+  const [appointments, setAppointments] = useState([]);
+  const [appointmentsLoading, setAppointmentsLoading] = useState(true);
+  const [appointmentsError, setAppointmentsError] = useState("");
+  const [clinics, setClinics] = useState([]);
+  const [clinicsLoading, setClinicsLoading] = useState(true);
 
-  const clinics = ["City Care Clinic", "MedPlus Clinic", "HealthPoint Clinic"];
+  useEffect(() => {
+    request("get", "/api/appointment/my-appointments", null, token)
+      .then((result) => setAppointments(result?.appointments || []))
+      .catch((error) => setAppointmentsError(error.response?.data?.message || "Could not load your appointments."))
+      .finally(() => setAppointmentsLoading(false));
+  }, [token]);
 
-  const patients = [
-    {
-      id: 1,
-      token: "01",
-      name: "Rahul Sharma",
-      problem: "Fever & Cold",
-      image: "https://i.pravatar.cc/150?img=12",
-      status: "Completed",
-      time: "18 min",
-    },
-    {
-      id: 2,
-      token: "02",
-      name: "Ananya Singh",
-      problem: "Migraine",
-      image: "https://i.pravatar.cc/150?img=47",
-      status: "Completed",
-      time: "24 min",
-    },
-    {
-      id: 3,
-      token: "03",
-      name: "Vikash Kumar",
-      problem: "Blood Pressure",
-      image: "https://i.pravatar.cc/150?img=11",
-      status: "In Appointment",
-      time: "--",
-    },
-    {
-      id: 4,
-      token: "04",
-      name: "Neha Gupta",
-      problem: "General Checkup",
-      image: "https://i.pravatar.cc/150?img=32",
-      status: "In Appointment",
-      time: "--",
-    },
-    {
-      id: 5,
-      token: "05",
-      name: "Aman Verma",
-      problem: "Headache",
-      image: "https://i.pravatar.cc/150?img=68",
-      status: "Waiting",
-      time: "--",
-    },
-  ];
+  const patients = appointments.map((appointment, index) => ({
+    id: appointment._id,
+    token: String(index + 1).padStart(2, "0"),
+    name: appointment.doctorId?.name ? `Dr. ${appointment.doctorId.name}` : "Doctor",
+    problem: appointment.reason || "General consultation",
+    image: "https://i.pravatar.cc/150?img=12",
+    status: appointment.status || "scheduled",
+    time: appointment.appointmentDate ? new Date(appointment.appointmentDate).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "--",
+    clinicName: appointment.clinicId?.clinicName || "Clinic",
+  }));
 
-  const [selectedClinic, setSelectedClinic] = useState(clinics[0]);
+  const [selectedClinicId, setSelectedClinicId] = useState("");
   const [clinicOpen, setClinicOpen] = useState(false);
+  const selectedClinic = clinics.find((clinic) => clinic._id === selectedClinicId);
+
+  useEffect(() => {
+    request("get", "/api/clinic/public")
+      .then((result) => {
+        const availableClinics = result?.clinics || [];
+        setClinics(availableClinics);
+        setSelectedClinicId(availableClinics[0]?._id || "");
+      })
+      .finally(() => setClinicsLoading(false));
+  }, []);
 
   const completed = patients.filter((patient) => patient.status === "Completed").length;
   const remaining = patients.length - completed;
@@ -75,7 +61,7 @@ const PatientAppointments = () => {
           <button onClick={() => setClinicOpen(!clinicOpen)} className="flex h-[54px] min-w-[230px] items-center justify-between rounded-full bg-[#17312E] px-5 text-left">
             <div>
               <p className="text-[7px] font-semibold uppercase tracking-[1px] text-white/45">CLINIC</p>
-              <p className="mt-0.5 text-[11px] font-semibold text-white">{selectedClinic}</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-white">{clinicsLoading ? "Loading clinics..." : selectedClinic?.clinicName || "No clinics available"}</p>
             </div>
             <FiChevronDown className={`text-[15px] text-white/70 transition-transform duration-300 ${clinicOpen ? "rotate-180" : ""}`} />
           </button>
@@ -83,10 +69,11 @@ const PatientAppointments = () => {
           {clinicOpen && (
             <div className="absolute right-0 top-[55px] z-30 w-[230px] overflow-hidden rounded-[16px] border border-[#E5E8EE] bg-white p-1.5 shadow-[0_15px_35px_rgba(23,33,63,0.12)]">
               {clinics.map((clinic) => (
-                <button key={clinic} onClick={() => { setSelectedClinic(clinic); setClinicOpen(false); }} className={`w-full rounded-[11px] px-4 py-3 text-left text-[10px] font-semibold transition-colors ${selectedClinic === clinic ? "bg-[#F1F4F8] text-[#17312E]" : "text-[#7D8799] hover:bg-[#F8F9F7] hover:text-[#17312E]"}`}>
-                  {clinic}
+                <button key={clinic._id} onClick={() => { setSelectedClinicId(clinic._id); setClinicOpen(false); }} className={`w-full rounded-[11px] px-4 py-3 text-left text-[10px] font-semibold transition-colors ${selectedClinicId === clinic._id ? "bg-[#F1F4F8] text-[#17312E]" : "text-[#7D8799] hover:bg-[#F8F9F7] hover:text-[#17312E]"}`}>
+                  {clinic.clinicName}
                 </button>
               ))}
+              {!clinicsLoading && clinics.length === 0 && <p className="px-4 py-3 text-[10px] text-[#7D8799]">No clinics available</p>}
             </div>
           )}
         </div>
@@ -132,7 +119,7 @@ const PatientAppointments = () => {
               <span className="h-[9px] w-[9px] rounded-[2px] bg-[#17312E]"></span>
               <span className="text-[9px] font-semibold tracking-[0.3px] text-[#202D55]">PATIENT QUEUE</span>
             </div>
-            <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.6px] text-[#17312E]">{selectedClinic}</h3>
+            <h3 className="mt-2 text-[20px] font-semibold tracking-[-0.6px] text-[#17312E]">Your appointments</h3>
           </div>
 
           <div className="flex items-center gap-2">
@@ -141,7 +128,8 @@ const PatientAppointments = () => {
           </div>
         </div>
 
-        <div className="">
+        {appointmentsError && <p className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-xs text-rose-700">{appointmentsError}</p>}
+        {appointmentsLoading ? <p className="py-10 text-center text-sm text-[#8B95A7]">Loading your appointments...</p> : !patients.length ? <p className="py-10 text-center text-sm text-[#8B95A7]">No appointments booked yet.</p> : <div className="">
 
           {patients.map((patient) => (
             <div key={patient.id} className="group flex min-h-[86px] items-center gap-5 py-3 transition-colors duration-200 hover:bg-[#FAFBFC]">
@@ -170,14 +158,14 @@ const PatientAppointments = () => {
                 <span className="text-[11px] font-semibold text-[#202D55]">{patient.time}</span>
               </div>
 
-              <button onClick={() => navigate(`/patient/prescription`)} className="flex h-[40px] w-[275px] items-center justify-center gap-2 rounded-full border border-[#DDE2E9] bg-[#202D55] text-[8px] font-bold uppercase tracking-[0.8px] text-white transition-all duration-300 hover:border-[#17312E] hover:bg-[#17312E] hover:text-white">
+              <button onClick={() => navigate(`/patient/prescriptions`)} className="flex h-[40px] w-[275px] items-center justify-center gap-2 rounded-full border border-[#DDE2E9] bg-[#202D55] text-[8px] font-bold uppercase tracking-[0.8px] text-white transition-all duration-300 hover:border-[#17312E] hover:bg-[#17312E] hover:text-white">
                 Access Prescription
               </button>
 
             </div>
           ))}
 
-        </div>
+        </div>}
 
       </div>
 
@@ -186,4 +174,3 @@ const PatientAppointments = () => {
 };
 
 export default PatientAppointments;
-

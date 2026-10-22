@@ -30,6 +30,17 @@ const appointmentSchema = new mongoose.Schema(
             trim: true
         },
 
+        age: {
+            type: Number,
+            min: 0,
+            max: 130
+        },
+
+        isEmergency: {
+            type: Boolean,
+            default: false
+        },
+
         status: {
             type: String,
             enum: ["scheduled", "completed", "cancelled"],
